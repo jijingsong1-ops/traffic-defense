@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>路网守卫 · Traffic Defense</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: #0b1419; }
+    body { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+    canvas { display: block; width: min(1120px, 100%, calc((100dvh - 32px) * 1.473684)); height: auto;
+      border: 1px solid #2b4048; border-radius: 18px; touch-action: manipulation; }
+  </style>
+</head>
+<body>
+<canvas id="game" width="1120" height="760" aria-label="交通路网塔防，鼠标选择防御塔后点击草地建造"></canvas>
+<script>
+"use strict";
+
+// 一、基础参数：新增塔类型只需扩展 TOWER_TYPES，并添加对应图形。
+const CONFIG = {
+  width: 1120, height: 760, lives: 20, gold: 280, waves: 8,
+  firstPreparation: 25, preparation: 14, spawnInterval: 0.9,
+  baseEnemyCount: 7, extraEnemies: 3, enemyHealth: 44,
+  healthGrowth: 1.27, enemySpeed: 49, speedGrowth: 2,
+  killReward: 13, waveReward: 30, roadWidth: 38,
+  towerRadius: 18, towerSpacing: 44, grid: 20, maxLevel: 3,
+  upgradeRatio: 0.7, damageGrowth: 1.55, rangeGrowth: 12,
+  projectileSpeed: 340, maxDelta: 0.05
+};
+const TOWER_TYPES = {
+  arrow: { name: "基础箭塔", tag: "01 / PRECISION", cost: 90, damage: 18,
+    range: 125, cooldown: 0.68, color: "#6ee7c2", note: "快速射击 · 单体伤害" },
+  slow: { name: "减速塔", tag: "02 / CONTROL", cost: 110, damage: 7,
+    range: 116, cooldown: 0.85, color: "#81c9ff", note: "冰冻脉冲 · 车速降低 55%",
+    slowFactor: 0.45, slowDuration: 1.8 },
+  cannon: { name: "重炮塔", tag: "03 / ARTILLERY", cost: 160, damage: 48,
+    range: 138, cooldown: 2.1, color: "#ffbe7a", note: "范围轰炸 · 高伤害慢攻速", splash: 54 }
+};
+const MAP = { x: 24, y: 112, w: 784, h: 520 };
+const UI = {
+  cards: Object.keys(TOWER_TYPES).map((type, i) => ({ type, x: 832, y: 166 + i * 94, w: 264, h: 82 })),
+  upgrade: { x: 850, y: 546, w: 228, h: 40 },
+  next: { x: 832, y: 644, w: 264, h: 48 },
+  reset: { x: 832, y: 704, w: 264, h: 32 }
+};
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+// 使用逻辑坐标绘图，同时兼顾高分屏清晰度。
+const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+canvas.width = CONFIG.width * pixelRatio;
+canvas.height = CONFIG.height * pixelRatio;
+ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+
+// 二、碰撞检测：路段距离同时用于禁止在道路上建造。
+const Collision = {
+  distance(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); },
+  inside(p, r) { return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h; },
+  segmentDistance(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const t = lengthSquared ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared)) : 0;
+    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+  }
+};
+
+// 三、路网模块：节点与单向邻接表分离，可替换为编辑器输出。
+class RoadNetwork {
+  constructor() {
+    this.nodes = {
+      start: { x: 48, y: 372 }, fork: { x: 190, y: 372 },
+      upperA: { x: 302, y: 244 }, upperB: { x: 522, y: 244 },
+      lowerA: { x: 302, y: 500 }, lowerB: { x: 522, y: 500 },
+      merge: { x: 650, y: 372 }, end: { x: 790, y: 372 }
+    };
+    this.links = { start: ["fork"], fork: ["upperA", "lowerA"],
+      upperA: ["upperB"], upperB: ["merge"], lowerA: ["lowerB"],
+      lowerB: ["merge"], merge: ["end"], end: [] };
+    this.edges = Object.entries(this.links).flatMap(([from, targets]) =>
+      targets.map(to => [this.nodes[from], this.nodes[to]]));
+  }
+  createPath(branch) {
+    const path = [this.nodes.start];
+    let id = "start";
+    while (this.links[id].length) {
+      const choices = this.links[id];
+      id = choices.length > 1 ? choices[branch % choices.length] : choices[0];
+      path.push(this.nodes[id]);
+    }
+    return path;
+  }
+  isRoad(p, extra = 0) {
+    return this.edges.some(([a, b]) => Collision.segmentDistance(p, a, b) < CONFIG.roadWidth / 2 + extra);
+  }
+}
+
+// 四、敌人模块：支持跨越多个路径节点，减速采用刷新持续时间。
+class Enemy {
+  constructor(path, wave, index) {
+    this.path = path;
+    this.segment = 0;
+    this.x = path[0].x;
+    this.y = path[0].y;
+    this.heavy = index % 5 === 4;
+    this.maxHealth = CONFIG.enemyHealth * CONFIG.healthGrowth ** (wave - 1) * (this.heavy ? 1.8 : 1);
+    this.health = this.maxHealth;
+    this.speed = (CONFIG.enemySpeed + wave * CONFIG.speedGrowth) * (this.heavy ? 0.8 : 1);
+    this.reward = CONFIG.killReward + (this.heavy ? 8 : 0);
+    this.slowTime = 0;
+    this.slowFactor = 1;
+    this.angle = 0;
+    this.travelled = 0;
+    this.dead = false;
+  }
+  update(dt, game) {
+    const slowedFor = Math.min(this.slowTime, dt);
+    let distance = this.speed * (dt - slowedFor + slowedFor * this.slowFactor);
+    this.slowTime = Math.max(0, this.slowTime - dt);
+    while (distance > 0 && !this.dead) {
+      const target = this.path[this.segment + 1];
+      if (!target) { this.escape(game); break; }
+      const remaining = Collision.distance(this, target);
+      this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+      if (distance >= remaining) {
+        this.x = target.x; this.y = target.y;
+        this.travelled += remaining;
+        distance -= remaining;
+        this.segment++;
+        if (this.segment === this.path.length - 1) this.escape(game);
+      } else {
+        this.x += Math.cos(this.angle) * distance;
+        this.y += Math.sin(this.angle) * distance;
+        this.travelled += distance;
+        distance = 0;
+      }
+    }
+  }
+  escape(game) {
+    this.dead = true;
+    game.lives = Math.max(0, game.lives - (this.heavy ? 2 : 1));
+    game.effect(this, "#ff7882", 28);
+  }
+  hit(damage, game) {
+    if (this.dead) return;
+    this.health -= damage;
+    if (this.health <= 0) {
+      this.dead = true;
+      game.gold += this.reward;
+      game.kills++;
+      game.effect(this, "#ffd583", 23);
+    }
+  }
+}
+
+// 五、防御塔与弹丸：索敌优先选择已行驶距离最大的车辆。
+class Tower {
+  constructor(type, x, y) {
+    this.type = type; this.x = x; this.y = y;
+    this.level = 1; this.cooldown = 0; this.angle = -Math.PI / 2;
+  }
+  get spec() { return TOWER_TYPES[this.type]; }
+  get range() { return this.spec.range + (this.level - 1) * CONFIG.rangeGrowth; }
+  get damage() { return this.spec.damage * CONFIG.damageGrowth ** (this.level - 1); }
+  get upgradeCost() { return Math.round(this.spec.cost * CONFIG.upgradeRatio * this.level); }
+  update(dt, game) {
+    this.cooldown = Math.max(0, this.cooldown - dt);
+    const target = game.enemies.reduce((best, enemy) => {
+      if (enemy.dead || Collision.distance(this, enemy) > this.range) return best;
+      return !best || enemy.travelled > best.travelled ? enemy : best;
+    }, null);
+    if (!target) return;
+    this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+    if (this.cooldown === 0) {
+      game.projectiles.push(new Projectile(this, target));
+      this.cooldown = this.spec.cooldown;
+    }
+  }
+}
+
+class Projectile {
+  constructor(tower, target) {
+    this.x = tower.x; this.y = tower.y; this.target = target;
+    this.destination = { x: target.x, y: target.y };
+    this.spec = tower.spec; this.damage = tower.damage; this.dead = false;
+  }
+  update(dt, game) {
+    if (!this.target.dead) this.destination = { x: this.target.x, y: this.target.y };
+    const distance = Collision.distance(this, this.destination);
+    const step = CONFIG.projectileSpeed * dt;
+    if (distance <= step) {
+      this.dead = true;
+      const victims = this.spec.splash
+        ? game.enemies.filter(e => !e.dead && Collision.distance(e, this.destination) <= this.spec.splash)
+        : (this.target.dead ? [] : [this.target]);
+      for (const enemy of victims) {
+        enemy.hit(this.damage, game);
+        if (this.spec.slowFactor && !enemy.dead) {
+          enemy.slowFactor = this.spec.slowFactor;
+          enemy.slowTime = this.spec.slowDuration;
+        }
+      }
+      game.effect(this.destination, this.spec.color, this.spec.splash || 12);
+    } else {
+      this.x += (this.destination.x - this.x) / distance * step;
+      this.y += (this.destination.y - this.y) / distance * step;
+    }
+  }
+}
+
+// 六、Game 管理经济、交互、波次和唯一的 requestAnimationFrame 循环。
+class Game {
+  constructor() {
+    this.road = new RoadNetwork();
+    this.pointer = { x: -100, y: -100 };
+    this.reset();
+    canvas.addEventListener("pointermove", event => { this.pointer = this.toCanvas(event); });
+    canvas.addEventListener("pointerleave", () => { this.pointer = { x: -100, y: -100 }; });
+    canvas.addEventListener("pointerdown", event => {
+      if (event.button !== 0) return;
+      this.pointer = this.toCanvas(event);
+      this.click(this.pointer);
+    });
+    window.addEventListener("keydown", event => {
+      if (event.key === "Escape") { this.selected = null; this.buildType = null; }
+    });
+    // 标签页回到前台时重新计时，避免后台时间导致车流瞬移。
+    document.addEventListener("visibilitychange", () => { this.lastTime = null; });
+    this.lastTime = null;
+    requestAnimationFrame(time => this.frame(time));
+  }
+  reset() {
+    this.lives = CONFIG.lives; this.gold = CONFIG.gold; this.wave = 0; this.kills = 0;
+    this.state = "prepare"; this.prepareTime = CONFIG.firstPreparation;
+    this.enemies = []; this.towers = []; this.projectiles = []; this.effects = [];
+    this.spawnLeft = 0; this.spawnTimer = 0; this.spawnIndex = 0;
+    this.selected = null; this.buildType = "arrow";
+    this.message = "选择右侧防御塔，点击草地建造。"; this.messageTime = 6;
+  }
+  toCanvas(event) {
+    const rect = canvas.getBoundingClientRect();
+    return { x: (event.clientX - rect.left) * CONFIG.width / rect.width,
+      y: (event.clientY - rect.top) * CONFIG.height / rect.height };
+  }
+  snap(p) { return { x: Math.round(p.x / CONFIG.grid) * CONFIG.grid, y: Math.round(p.y / CONFIG.grid) * CONFIG.grid }; }
+  towerAt(p) { return this.towers.find(t => Collision.distance(t, p) <= CONFIG.towerRadius + 6); }
+  canBuild(p) {
+    const bounds = { x: MAP.x + 24, y: MAP.y + 66, w: MAP.w - 48, h: MAP.h - 94 };
+    return Collision.inside(p, bounds) && !this.road.isRoad(p, CONFIG.towerRadius + 5)
+      && this.towers.every(t => Collision.distance(t, p) >= CONFIG.towerSpacing);
+  }
+  notify(message) { this.message = message; this.messageTime = 3; }
+  effect(p, color, radius) { this.effects.push({ x: p.x, y: p.y, color, radius, life: 0.35, maxLife: 0.35 }); }
+  click(p) {
+    if (Collision.inside(p, UI.reset)) { this.reset(); return; }
+    if (this.state === "won" || this.state === "lost") return;
+    if (Collision.inside(p, UI.next)) { this.startWave(); return; }
+    for (const card of UI.cards) {
+      if (Collision.inside(p, card)) { this.buildType = card.type; this.selected = null; return; }
+    }
+    if (this.selected && Collision.inside(p, UI.upgrade)) {
+      const tower = this.selected;
+      if (tower.level >= CONFIG.maxLevel) return;
+      if (this.gold < tower.upgradeCost) { this.notify("金币不足，击毁更多车辆后再升级。"); return; }
+      this.gold -= tower.upgradeCost; tower.level++;
+      this.notify(`${tower.spec.name}已升级至 ${tower.level} 级。`);
+      return;
+    }
+    if (!Collision.inside(p, MAP)) return;
+    const tower = this.towerAt(p);
+    if (tower) { this.selected = tower; this.buildType = null; return; }
+    this.selected = null;
+    if (!this.buildType) return;
+    const spot = this.snap(p), spec = TOWER_TYPES[this.buildType];
+    if (!this.canBuild(spot)) { this.notify("请在远离车道、其他塔的草地上建造。"); return; }
+    if (this.gold < spec.cost) { this.notify("金币不足，请等待击杀奖励。"); return; }
+    this.gold -= spec.cost;
+    this.towers.push(new Tower(this.buildType, spot.x, spot.y));
+    this.effect(spot, spec.color, 28);
+    this.notify(`${spec.name}已部署，继续点击可连续建造。`);
+  }
+  startWave() {
+    if (this.state !== "prepare") return;
+    this.wave++; this.state = "wave";
+    this.spawnLeft = CONFIG.baseEnemyCount + this.wave * CONFIG.extraEnemies;
+    this.spawnIndex = 0; this.spawnTimer = 0;
+    this.notify(`第 ${this.wave} 波车流来袭！两条支路都需要防守。`);
+  }
+  update(dt) {
+    this.messageTime = Math.max(0, this.messageTime - dt);
+    this.effects.forEach(effect => { effect.life -= dt; });
+    this.effects = this.effects.filter(effect => effect.life > 0);
+    if (this.state === "won" || this.state === "lost") return;
+    if (this.state === "prepare") {
+      this.prepareTime -= dt;
+      if (this.prepareTime <= 0) this.startWave();
+    }
+    if (this.state === "wave") {
+      this.spawnTimer -= dt;
+      while (this.spawnLeft > 0 && this.spawnTimer <= 0) {
+        this.enemies.push(new Enemy(this.road.createPath(this.spawnIndex % 2), this.wave, this.spawnIndex));
+        this.spawnIndex++; this.spawnLeft--;
+        this.spawnTimer += CONFIG.spawnInterval;
+      }
+    }
+    for (const enemy of this.enemies) {
+      if (!enemy.dead) enemy.update(dt, this);
+      if (this.lives <= 0) { this.state = "lost"; return; }
+    }
+    this.towers.forEach(tower => tower.update(dt, this));
+    this.projectiles.forEach(projectile => projectile.update(dt, this));
+    this.enemies = this.enemies.filter(enemy => !enemy.dead);
+    this.projectiles = this.projectiles.filter(projectile => !projectile.dead);
+    if (this.state === "wave" && this.spawnLeft === 0 && this.enemies.length === 0) {
+      this.projectiles = [];
+      if (this.wave === CONFIG.waves) { this.state = "won"; return; }
+      this.state = "prepare"; this.prepareTime = CONFIG.preparation;
+      this.gold += CONFIG.waveReward;
+      this.notify(`防线守住了！获得 ${CONFIG.waveReward} 金币补给。`);
+    }
+  }
+  frame(time) {
+    const dt = this.lastTime === null ? 0 : Math.min((time - this.lastTime) / 1000, CONFIG.maxDelta);
+    this.lastTime = time;
+    if (!document.hidden) this.update(dt);
+    Renderer.draw(this);
+    requestAnimationFrame(nextTime => this.frame(nextTime));
+  }
+}
+
+// 七、渲染模块：场景、面板、按钮、文字全部由 Canvas 绘制。
+const Renderer = {
+  box(x, y, w, h, color, radius = 10, border = null) {
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, radius);
+    ctx.fillStyle = color; ctx.fill();
+    if (border) { ctx.strokeStyle = border; ctx.lineWidth = 1; ctx.stroke(); }
+  },
+  text(text, x, y, size = 14, color = "#e4eee9", weight = "normal", align = "left") {
+    ctx.font = `${weight} ${size}px "Microsoft YaHei", system-ui, sans-serif`;
+    ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "middle";
+    ctx.fillText(text, x, y);
+  },
+  circle(x, y, radius, color) {
+    ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
+  },
+  range(p, radius, valid = true) {
+    ctx.save(); ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = valid ? "#6ee7c218" : "#ff788218"; ctx.fill();
+    ctx.strokeStyle = valid ? "#6ee7c290" : "#ff788290";
+    ctx.lineWidth = 1; ctx.setLineDash([5, 5]); ctx.stroke(); ctx.restore();
+  },
+  tower(tower, ghost = false) {
+    const spec = TOWER_TYPES[tower.type];
+    ctx.save(); ctx.translate(tower.x, tower.y); ctx.globalAlpha = ghost ? 0.6 : 1;
+    this.circle(0, 4, 21, "#0a171d60");
+    this.box(-17, -17, 34, 34, "#233a42", 9, spec.color);
+    this.circle(0, 0, 11, spec.color);
+    ctx.save(); ctx.rotate(tower.angle || 0);
+    if (tower.type === "cannon") {
+      this.box(-4, -6, 27, 12, "#d8e3dc", 3); this.box(17, -7, 7, 14, "#52646a", 2);
+    } else if (tower.type === "arrow") {
+      this.box(-3, -3, 25, 6, "#e6fff2", 2);
+      ctx.strokeStyle = "#183c36"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(9, -10); ctx.lineTo(15, 0); ctx.lineTo(9, 10); ctx.stroke();
+    } else {
+      ctx.strokeStyle = "#effaff"; ctx.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        ctx.rotate(Math.PI / 3); ctx.beginPath(); ctx.moveTo(-10, 0); ctx.lineTo(10, 0); ctx.stroke();
+      }
+    }
+    ctx.restore();
+    for (let i = 0; i < tower.level; i++) this.circle((i - (tower.level - 1) / 2) * 7, 24, 2, spec.color);
+    ctx.restore();
+  },
+  road(game) {
+    this.box(MAP.x, MAP.y, MAP.w, MAP.h, "#1b3535", 14, "#38504d");
+    ctx.save(); ctx.beginPath(); ctx.rect(MAP.x, MAP.y, MAP.w, MAP.h); ctx.clip();
+    // 确定性装饰，无每帧随机闪烁，也不影响实际建造判定。
+    for (let x = 48; x < 800; x += 24) for (let y = 184; y < 616; y += 24) {
+      if (!game.road.isRoad({ x, y }, 14)) this.circle(x, y, 1, "#41625355");
+    }
+    const strokeRoad = (width, color, dashed = false) => {
+      ctx.lineWidth = width; ctx.strokeStyle = color; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.setLineDash(dashed ? [9, 12] : []);
+      ctx.beginPath();
+      for (const [a, b] of game.road.edges) { ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); }
+      ctx.stroke();
+    };
+    strokeRoad(CONFIG.roadWidth + 10, "#58706a");
+    strokeRoad(CONFIG.roadWidth, "#32434a");
+    strokeRoad(1, "#a0aca078", true); ctx.setLineDash([]);
+    // 每个有向边上的箭头明确指示单向行车方向。
+    for (const [a, b] of game.road.edges) {
+      ctx.save(); ctx.translate((a.x + b.x) / 2, (a.y + b.y) / 2);
+      ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x));
+      ctx.beginPath(); ctx.moveTo(-4, -5); ctx.lineTo(3, 0); ctx.lineTo(-4, 5);
+      ctx.strokeStyle = "#cbd7c9"; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
+    }
+    ctx.restore();
+    this.text("SECTOR 07", 46, 139, 11, "#84aaa1", "bold");
+    this.text("双环交通防线", 46, 162, 19, "#e3eee3", "bold");
+    this.text("单向车道 / 双支路汇流", 785, 143, 12, "#8ea9a1", "normal", "right");
+    this.box(32, 328, 62, 24, "#245646", 5); this.text("入口 →", 63, 340, 11, "#9df1c3", "bold", "center");
+    this.box(725, 328, 70, 24, "#64434a", 5); this.text("终点 / 基地", 760, 340, 10, "#ffbec2", "bold", "center");
+    this.text("A / 北线", 403, 211, 11, "#91b1a5", "normal", "center");
+    this.text("B / 南线", 403, 533, 11, "#91b1a5", "normal", "center");
+    this.text("GREEN ZONE / 可建造区域", 46, 609, 10, "#6c998a");
+  },
+  enemy(enemy) {
+    ctx.save(); ctx.translate(enemy.x, enemy.y); ctx.rotate(enemy.angle);
+    this.box(-13, -8, enemy.heavy ? 30 : 25, 17, "#09181a80", 4);
+    this.box(-12, -10, enemy.heavy ? 28 : 23, 17, enemy.slowTime > 0 ? "#9adfff" : enemy.heavy ? "#f0a877" : "#edda94", 4);
+    this.box(2, -7, 5, 11, "#385864", 2);
+    if (enemy.heavy) this.box(-10, -7, 10, 11, "#bd7b54", 2);
+    ctx.restore();
+    this.box(enemy.x - 15, enemy.y - 22, 30, 4, "#132128", 2);
+    this.box(enemy.x - 15, enemy.y - 22, 30 * Math.max(0, enemy.health / enemy.maxHealth), 4, "#87e4ab", 2);
+  },
+  panel(game) {
+    this.text("防御部署", 832, 130, 20, "#ecf3ed", "bold");
+    this.text("选择塔型 · 在草地区域建造", 832, 151, 12, "#849c9f");
+    for (const card of UI.cards) {
+      const spec = TOWER_TYPES[card.type], active = game.buildType === card.type;
+      this.box(card.x, card.y, card.w, card.h, active ? "#203e3d" : "#17282f", 10, active ? spec.color : "#2b4048");
+      this.tower({ x: card.x + 34, y: card.y + 38, type: card.type, level: 0, angle: -0.6 });
+      this.text(spec.tag, card.x + 65, card.y + 17, 9, "#86a1a5");
+      this.text(spec.name, card.x + 65, card.y + 38, 16, "#e9f1ed", "bold");
+      this.text(`${spec.cost} G`, card.x + card.w - 14, card.y + 37, 14, game.gold >= spec.cost ? "#efd58c" : "#b68080", "bold", "right");
+      this.text(spec.note, card.x + 65, card.y + 63, 11, "#93a8a9");
+    }
+    this.box(832, 458, 264, 174, "#13232a", 10, "#2b4048");
+    const tower = game.selected;
+    if (tower) {
+      this.text(`${tower.spec.name} / LV.${tower.level}`, 850, 482, 17, tower.spec.color, "bold");
+      this.text(`伤害 ${Math.round(tower.damage)}   射程 ${tower.range}`, 850, 512, 13, "#b4c7c6");
+      const maxed = tower.level >= CONFIG.maxLevel;
+      const affordable = game.gold >= tower.upgradeCost;
+      this.box(UI.upgrade.x, UI.upgrade.y, UI.upgrade.w, UI.upgrade.h, !maxed && affordable ? "#6ee7c2" : "#31464b", 7);
+      this.text(maxed ? "已达到最高等级" : `升级防御塔 · ${tower.upgradeCost} G`, 964, 566, 14, !maxed && affordable ? "#10352e" : "#9cafad", "bold", "center");
+      this.text("升级提升伤害与射程", 964, 611, 11, "#80999b", "normal", "center");
+    } else {
+      this.text("守住每一个路口。", 850, 484, 17, "#d6e6de", "bold");
+      this.text("箭塔处理落单车辆", 850, 516, 13, "#9ab1ae");
+      this.text("减速搭配重炮，拦截密集车流", 850, 541, 13, "#9ab1ae");
+      this.text("点击已建造的塔，查看并升级", 850, 566, 13, "#9ab1ae");
+      this.text("重型车辆漏过会扣除 2 点生命", 850, 604, 11, "#d5b18b");
+    }
+    const ready = game.state === "prepare";
+    this.box(UI.next.x, UI.next.y, UI.next.w, UI.next.h, ready ? "#6ee7c2" : "#263b41", 9);
+    this.text(ready ? `开始第 ${game.wave + 1} 波  →` : game.state === "wave" ? "车流来袭 · 防御进行中" : "战斗已结束", 964, 668, 16, ready ? "#11372e" : "#95aaa9", "bold", "center");
+    this.box(UI.reset.x, UI.reset.y, UI.reset.w, UI.reset.h, "#15262d", 7, "#334950");
+    this.text("↻  重置游戏", 964, 720, 13, "#becfca", "normal", "center");
+  },
+  draw(game) {
+    ctx.clearRect(0, 0, CONFIG.width, CONFIG.height);
+    ctx.fillStyle = "#0f1d24"; ctx.fillRect(0, 0, CONFIG.width, CONFIG.height);
+    this.text("路网守卫", 28, 39, 27, "#eef4e9", "bold");
+    this.text("TRAFFIC DEFENSE / 战术指挥台", 29, 70, 11, "#839f9e");
+    const stats = [["基地生命", `${game.lives} / ${CONFIG.lives}`, "#ffa6ac"],
+      ["可用金币", `${game.gold} G`, "#f1d690"], ["当前波次", `${game.wave} / ${CONFIG.waves}`, "#97ddcb"]];
+    stats.forEach(([label, value, color], index) => {
+      const x = 485 + index * 208;
+      this.box(x, 20, 194, 65, "#172a31", 9, "#2b4247");
+      this.text(label, x + 15, 39, 11, "#8da7a7"); this.text(value, x + 15, 64, 22, color, "bold");
+    });
+    this.road(game);
+    const hoverTower = game.towerAt(game.pointer);
+    const rangeTower = hoverTower || game.selected;
+    ctx.save(); ctx.beginPath(); ctx.rect(MAP.x, MAP.y, MAP.w, MAP.h); ctx.clip();
+    if (rangeTower) this.range(rangeTower, rangeTower.range);
+    else if (game.buildType && Collision.inside(game.pointer, MAP) && ["prepare", "wave"].includes(game.state)) {
+      const spot = game.snap(game.pointer), spec = TOWER_TYPES[game.buildType];
+      this.range(spot, spec.range, game.canBuild(spot) && game.gold >= spec.cost);
+      this.tower({ ...spot, type: game.buildType, level: 1, angle: -Math.PI / 2 }, true);
+    }
+    game.towers.forEach(tower => this.tower(tower));
+    game.enemies.filter(enemy => !enemy.dead).forEach(enemy => this.enemy(enemy));
+    game.projectiles.forEach(p => this.circle(p.x, p.y, p.spec.splash ? 5 : 3, p.spec.color));
+    game.effects.forEach(effect => {
+      ctx.globalAlpha = effect.life / effect.maxLife;
+      ctx.beginPath(); ctx.arc(effect.x, effect.y, effect.radius * (1 - effect.life / effect.maxLife) + 3, 0, Math.PI * 2);
+      ctx.strokeStyle = effect.color; ctx.lineWidth = 3; ctx.stroke();
+    });
+    ctx.restore();
+    this.panel(game);
+    this.box(24, 644, 784, 48, "#172b31", 9, "#2e474a");
+    const preparing = game.state === "prepare";
+    this.circle(45, 668, 4, preparing ? "#6ee7c2" : "#ffbd7d");
+    this.text(preparing ? `准备阶段 · ${Math.max(0, Math.ceil(game.prepareTime))} 秒后自动发车` : game.state === "wave"
+      ? `防守中 · 待发车 ${game.spawnLeft} / 场上 ${game.enemies.length}` : "本次防守已结束", 60, 668, 14, "#c7dbd2");
+    this.text(`累计击毁 ${game.kills}`, 785, 668, 13, "#8faaa5", "normal", "right");
+    this.text(game.messageTime > 0 ? game.message : "左键建造 / 点击塔升级 / 悬停查看射程 / Esc 取消选择", 28, 716, 13, "#9cb3b1");
+    this.text("保护终点，让城市保持畅通。", 28, 740, 10, "#58777c");
+    if (game.state === "won" || game.state === "lost") {
+      this.box(MAP.x, MAP.y, MAP.w, MAP.h, "#08131bdb", 14);
+      const won = game.state === "won";
+      this.text(won ? "防线守住了" : "基地已失守", 416, 318, 42, won ? "#8bf0c8" : "#ff9b9f", "bold", "center");
+      this.text(won ? "所有车流已清除，城市恢复平静。" : "试试在分叉与汇流路口搭配减速塔和重炮。", 416, 374, 16, "#c1d5ce", "normal", "center");
+      this.text(`完成波次 ${game.state === "won" ? CONFIG.waves : Math.max(0, game.wave - 1)} / ${CONFIG.waves}  ·  击毁 ${game.kills}  ·  剩余生命 ${game.lives}`, 416, 416, 14, "#99b1ac", "normal", "center");
+      this.text("点击右下角「重置游戏」再次挑战", 416, 469, 14, "#e2d09b", "normal", "center");
+    }
+    canvas.style.cursor = UI.cards.some(card => Collision.inside(game.pointer, card))
+      || Collision.inside(game.pointer, UI.next) || Collision.inside(game.pointer, UI.reset)
+      || (game.selected && Collision.inside(game.pointer, UI.upgrade)) || hoverTower ? "pointer"
+      : game.buildType && Collision.inside(game.pointer, MAP) ? "crosshair" : "default";
+  }
+};
+
+const game = new Game();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# Local secrets and operating-system files
+.env
+.env.*
+!.env.example
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Dependencies and temporary logs
+node_modules/
+*.log
