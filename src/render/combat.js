@@ -18,7 +18,8 @@ Object.assign(Renderer, {
     const advanced=visual.level>=3, enhanced=visual.level>=2;
     const spread=3+(radius-3)*progress;
     if (kind === "pulse") {
-      // 一级单环、二级双环；高级Ⅰ为分段波阵，高级Ⅱ为旋转扫描网。
+      // 信号灯扫描圈与停车横线；高级形态增加同步路口节点。
+      for(const side of [-1,1])this.line([[x-spread*.4,y+side*spread*.65],[x+spread*.4,y+side*spread*.65]],"#eab36f",enhanced?4:2);
       this.attackRing(x,y,spread,color,advanced?3:2);
       if(enhanced)this.attackRing(x,y,spread*.7,color,1.5);
       if(advanced) {
@@ -44,26 +45,15 @@ Object.assign(Renderer, {
       }
       ctx.restore();
     } else if (visual.type === "missile") {
-      if(!advanced) {
-        this.circle(x,y,spread*.55,color+"40");this.attackRing(x,y,spread,color,enhanced?4:2);
-        if(enhanced)this.attackRing(x,y,spread*.55,"#fff0c7",2);
-      } else if(visual.branch===0) {
-        // 重型弹：同心冲击波与向外迸出的碎屑。
-        this.circle(x,y,spread*.55,color+"30");
-        this.attackRing(x,y,spread,color,5);this.attackRing(x,y,spread*.65,"#fff0cb",2);
-        const count=visual.level===4?12:8;
-        for(let i=0;i<count;i++) {
-          const angle=i*Math.PI*2/count,dx=Math.cos(angle),dy=Math.sin(angle);
-          this.line([[x+dx*spread*.75,y+dy*spread*.75],[x+dx*spread,y+dy*spread]],color,3);
-        }
-      } else {
-        // 齐射弹：爆区内多个火花簇；仅视觉，不生成额外伤害。
-        this.attackRing(x,y,spread,color,2);
-        for(let i=0;i<(visual.level===4?7:5);i++) {
-          const angle=i*2.4+progress,offset=spread*.57;
-          this.attackRing(x+Math.cos(angle)*offset,y+Math.sin(angle)*offset,spread*.25,color,3);
-        }
+      // 制动索网落地；强化重锚以辐射拉索，双网则以交织网格区分。
+      this.attackRing(x,y,spread,color,advanced?3:2);
+      const spokes=visual.level===4?10:enhanced?8:5;
+      for(let i=0;i<spokes;i++){
+        const angle=i*Math.PI*2/spokes,px=x+Math.cos(angle)*spread,py=y+Math.sin(angle)*spread;
+        this.line([[x,y],[px,py]],"#eee3ba",1.3);
+        this.circle(px,py,advanced&&visual.branch===0?4:2,color);
       }
+      if(advanced&&visual.branch===1){this.attackRing(x,y,spread*.5,"#f7e7b2",2);this.attackRing(x,y,spread*.75,color,1.5);}
     } else {
       this.attackRing(x,y,spread,color,enhanced?3:1.5);
       if(advanced) {
@@ -113,9 +103,9 @@ Object.assign(Renderer, {
         const size=advanced&&branch===0?1.5:level===2?1.15:1;
         ctx.scale(size,size);
         this.line([[-(level===4?38:24),0],[-9,0]],color+"88",level>=2?4:2);
-        this.polygon([[-9,-3],[-19-(p.travelled%7),0],[-9,3]],"#ffc383");
-        this.box(-9,-3,12,6,"#edf0d6","#4b6266",3);
-        this.polygon([[2,-3],[7,0],[2,3]],color);
+        this.line([[-10,0],[6,0]],"#e1d6ad",3);
+        this.line([[0,-8],[6,0],[0,8]],color,3);
+        this.line([[-4,-6],[1,0],[-4,6]],"#607b7a",2);
         if(advanced&&branch===0){this.line([[-6,-5],[-2,5]],color,2);this.line([[-2,-5],[2,5]],color,2);}
         ctx.restore();
       }

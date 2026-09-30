@@ -2,13 +2,14 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>路网守卫 · 城市防卫计划</title>
 <link rel="stylesheet" href="assets/css/game.css">
 </head>
 <body>
-<canvas id="game" width="1280" height="820" tabindex="0" aria-label="路网守卫：六种地貌、每章八关，四种基础塔与章节进化。点击地块建塔，点击塔升级；勤务站派遣队员拦截车辆，可设置集合点。顶部切换音效和音乐，M开关音乐；部分关卡有黄色虚线变道预告。空格暂停，1至4建塔，Q空袭，E冻结。"></canvas>
+<canvas id="game" width="1280" height="720" tabindex="0" aria-label="路网守卫：从首页选择开始游戏或读取存档，点击章节路牌查看关卡简报。点击空地建造，点击设施升级。空格暂停，1至4建造，Q/E技能，M音乐，F全屏，Esc返回。"></canvas>
 <!-- 普通 defer 脚本支持直接打开本地文件；依赖按下列顺序加载。 -->
+<script defer src="src/platform/browser.js"></script>
 <script defer src="src/config.js"></script>
 <script defer src="src/data/enemies.js"></script>
 <script defer src="src/data/towers.js"></script>
@@ -18,11 +19,18 @@
 <script defer src="src/data/music.js"></script>
 <script defer src="src/core/audio.js"></script>
 <script defer src="src/core/road-network.js"></script>
+<script defer src="src/core/traffic.js"></script>
 <script defer src="src/entities.js"></script>
 <script defer src="src/game.js"></script>
 <script defer src="src/render/renderer.js"></script>
 <script defer src="src/render/facilities.js"></script>
+<script defer src="src/render/vehicles.js"></script>
 <script defer src="src/render/combat.js"></script>
+<script defer src="src/render/traffic.js"></script>
+<script defer src="src/render/mobile-art.js"></script>
+<script defer src="src/render/mobile.js"></script>
+<script defer src="src/render/mobile-layout.js"></script>
+<script defer src="src/render/browser.js"></script>
 <script defer src="src/main.js"></script>
 </body>
 </html>

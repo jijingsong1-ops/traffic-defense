@@ -9,3 +9,18 @@ Desktop.ini
 # Dependencies and temporary logs
 node_modules/
 *.log
+
+# 微信开发者工具个人设置和临时预览
+wechat/project.private.config.json
+wechat/.debug/
+wechat/.DS_Store
+docs/previews/current/wechat-preview-qr.png
+tests/_wechat-preview-info.json
+tests/_wechat-preview.html
+tests/_wechat-preview.js
+
+tests/_vehicles-preview.html
+
+tests/_site-preview.html
+tests/_traffic-preview.html
+tests/_traffic-web-preview.html

@@ -12,8 +12,14 @@ class RoadNetwork {
       return this.nodes.get(key);
     }));
     for (const route of this.routes) for (let i = 0; i < route.length - 1; i++) {
-      const a = route[i], b = route[i + 1], key = `${a.x},${a.y}>${b.x},${b.y}`;
-      if (!uniqueEdges.has(key)) { uniqueEdges.add(key); this.edges.push([a, b]); }
+      const a = route[i], b = route[i + 1];
+      // 在已有路口处分段，合流道路只绘制一次，避免长短线段叠画标线。
+      const points=[...this.nodes.values()].filter(p=>Collision.segmentDistance(p,a,b)<.001)
+        .sort((p,q)=>Collision.distance(a,p)-Collision.distance(a,q));
+      for(let n=1;n<points.length;n++){
+        const from=points[n-1],to=points[n],key=`${from.x},${from.y}>${to.x},${to.y}`;
+        if(!uniqueEdges.has(key)){uniqueEdges.add(key);this.edges.push([from,to]);}
+      }
     }
   }
   path(index) { return this.routes[index % this.routes.length]; }
@@ -39,7 +45,7 @@ function planConstructionSites(level) {
       const fraction = (step + 0.5) / steps;
       const p = { x: Math.round(a.x + (b.x - a.x) * fraction + nx * CONFIG.siteRoadOffset * side),
         y: Math.round(a.y + (b.y - a.y) * fraction + ny * CONFIG.siteRoadOffset * side) };
-      if (p.x < 60 || p.x > 882 || p.y < 191 || p.y > 637 || road.isRoad(p, CONFIG.towerRadius + 7)) continue;
+      if (p.x < MAP.x+36 || p.x > MAP.x+MAP.w-42 || p.y < MAP.y+79 || p.y > MAP.y+MAP.h-49 || road.isRoad(p, CONFIG.towerRadius + 7)) continue;
       if (sites.some(other => Collision.distance(p, other) < CONFIG.spacing)) continue;
       sites.push(p);
     }

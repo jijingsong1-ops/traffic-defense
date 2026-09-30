@@ -16,7 +16,7 @@ const Renderer = {
       options.active ? color : options.disabled ? "#293d48" : hover ? color : COLORS.border, 7);
     this.text(label, rect.x + rect.w / 2, rect.y + rect.h / 2, options.size || 13,
       options.disabled ? "#607d8b" : options.primary ? "#102c30" : options.active ? color : COLORS.ink, "bold", "center");
-    game.buttons.push({ ...rect, action, disabled: options.disabled });
+    game.buttons.push({ ...rect, label, action, disabled: options.disabled });
   },
   range(p, radius, color = COLORS.mint) {
     ctx.save(); ctx.beginPath(); ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
@@ -85,55 +85,15 @@ const Renderer = {
     }
     ctx.restore();
   },
-  vehicle(type, x, y, angle = 0, frozen = false, shield = false) {
-    const spec=ENEMIES[type], boss=spec.boss, visual=spec.visual||type, tiny=visual==="runner"||visual==="swarm";
-    ctx.save(); ctx.translate(x,y);
-    if(shield) { this.circle(0,0,boss?33:23,"#a3e9f52c"); this.line([[-17,-14],[-22,-3],[-19,13]],"#bbf5ff",2); }
-    ctx.rotate(angle);
-    const w=boss?54:tiny?23:visual==="splitter"?37:32, h=boss?30:tiny?13:21;
-    this.box(-w/2+3,-h/2+5,w,h,"#17373845",null,5);
-    if(spec.skin==="sea") {
-      this.polygon([[-w/2-5,-h/2],[w/2-3,-h/2],[w/2+10,0],[w/2-3,h/2],[-w/2-5,h/2]],spec.color,"#35596b");
-      this.box(-w/2+3,-h/2+3,w-11,h-6,"#f1e6c6","#536e76",4);
-      this.box(0,-h/2+5,10,h-10,"#446e85",null,2);
-      this.line([[-w/2-12,-h/2],[-w/2-18,0],[-w/2-12,h/2]],"#cce8db",2);
-      if(spec.heal){this.line([[-7,-5],[-7,5]],"#6aa58a",3);this.line([[-12,0],[-2,0]],"#6aa58a",3);}
-    } else if(spec.skin==="forest") {
-      this.circle(1,3,boss?24:tiny?10:17,"#3c5a3e");this.circle(0,0,boss?22:tiny?9:16,spec.color);
-      this.polygon([[-9,-10],[-18,-24],[0,-14],[12,-23],[14,-5]],"#5b844d","#36573c");
-      this.circle(9,-5,4,"#e5d99a");this.circle(9,5,4,"#e5d99a");this.circle(11,-5,2,"#394c36");this.circle(11,5,2,"#394c36");
-      for(const dy of [-15,15])this.line([[-12,dy],[-21,dy*1.2]],"#506f45",5);
-      if(spec.heal)this.circle(-5,0,5,"#def4b5");
-    } else if(visual==="runner") {
-      for(const wx of [-11,10]) this.box(wx-3,-4,7,8,"#263c43","#9baca6",3);
-      this.box(-9,-4,19,8,frozen?"#aae2ee":spec.color,"#825e4a",3);
-      this.circle(-1,0,5,"#e1d1ac"); this.circle(1,-1,4,"#3c6574");
-      this.line([[7,-7],[7,7]],"#b7c2b5",2);
-    } else {
-      for(const wx of boss?[-19,0,19]:[-10,10]) for(const wy of [-h/2,h/2]) this.box(wx-4,wy-2,8,5,"#283b43","#b4bcaa",2);
-      this.box(-w/2,-h/2,w,h,frozen?"#a1ddeb":spec.color,"#50655f",4);
-      this.box(w/2-10,-h/2+3,6,h-6,"#365c6c","#c6e0d8",2);
-      this.box(-w/2+5,-h/2+4,w-20,h-8,visual==="armor"||boss?"#6d7c79":"#e6dfc655",null,2);
-      for(const wy of [-h/2+2,h/2-5]) this.box(w/2-2,wy,3,3,"#fff4ba",null,1);
-      this.box(-w/2-1,-h/2+2,2,4,"#bb514c",null,1);
-      if(visual==="healer") { this.box(-6,-6,4,12,"#f3ffeb",null,1); this.box(-10,-2,12,4,"#f3ffeb",null,1); }
-      if(visual==="armor"||boss) {
-        this.box(-9,-7,17,14,"#80928b","#d8d6b4",3);
-        this.box(3,-3,boss?23:17,6,"#4c6264","#b6c4b2",2);
-        if(boss) for(const wy of [-13,10]) this.box(-25,wy,10,3,"#f5c176",null,1);
-      }
-      if(visual==="splitter") for(const wx of [-13,-6,1]) this.box(wx,-7,5,14,"#8c6ca8","#e5caeb",1);
-      if(visual==="shield") this.line([[-8,-7],[-8,7]],"#c4f4ff",3);
-    }
-    ctx.restore();
-  },
   enemy(enemy) {
+    ctx.save();ctx.translate(-Math.sin(enemy.angle)*(enemy.passOffset||0),Math.cos(enemy.angle)*(enemy.passOffset||0));
     this.vehicle(enemy.type,enemy.x,enemy.y,enemy.angle,enemy.stunTime>0||enemy.slowTime>0,enemy.shield>0);
     const w=enemy.spec.boss?54:30;
     this.box(enemy.x-w/2,enemy.y-28,w,4,"#214047",null,2);
     this.box(enemy.x-w/2,enemy.y-28,w*Math.max(0,enemy.health/enemy.maxHealth),4,enemy.spec.boss?"#f59278":"#b8e691",null,2);
     if(enemy.maxShield) this.box(enemy.x-w/2,enemy.y-34,w*enemy.shield/enemy.maxShield,3,"#aae3f3",null,1);
     if(enemy.burnTime>0) { this.circle(enemy.x-10,enemy.y+6,5,"#ffb159"); this.circle(enemy.x-10,enemy.y+3,3,"#ffe394"); }
+    ctx.restore();
   },
   header(game, battle) {
     this.box(0,0,1280,98,"#17373e",null,0);
@@ -297,7 +257,8 @@ const Renderer = {
     ctx.restore();
     this.text(`${level.waves} 波车流`,945,357,14,COLORS.ink,"bold");
     this.text(`${level.gold} 初始金币`,1234,357,14,COLORS.gold,"bold","right");
-    this.text(level.boss?`◆ 最终波：${ENEMIES[level.bossType].name}`:`◇ 每 ${level.waveInterval.toFixed(0)} 秒进攻 · 允许重叠波次`,944,389,12,level.boss?COLORS.red:COLORS.mint);
+    this.text(`${Traffic.mission(level).name}${level.boss?` · ${ENEMIES[level.bossType].name}`:""}`,944,382,13,COLORS.mint);
+    this.text(Traffic.mission(level).brief,944,399,10,COLORS.muted);
     this.text(level.routeEvent?`第${level.routeEvent.wave}波 · ${level.routeEvent.name} · 中途变道`:level.reward,944,416,12,level.routeEvent?COLORS.gold:COLORS.muted);
     this.line([[941,439],[1236,439]],"#476264",1);
     this.text("出战塔组",944,462,17,COLORS.ink,"bold");
@@ -324,9 +285,6 @@ const Renderer = {
   wilderness(game) {
     const chapter=CHAPTERS[game.level.chapter];
     this.landscape(chapter,MAP,game.level.stage,p=>game.buildRoad.isRoad(p,65)||game.sites.some(site=>Collision.distance(site,p)<60));
-    if(chapter.theme==="sea")for(const site of game.sites) {
-      this.circle(site.x,site.y+4,32,"#d7c494");this.circle(site.x,site.y,27,"#a5b889");
-    }
     this.routeLayers(game);this.road(game.road,false,chapter);
     for(const route of game.road.routes) {
       const entry=route[0];this.circle(entry.x+6,entry.y,16,"#5b6650");this.text("»",entry.x+6,entry.y,23,"#f6df9c","bold","center");
@@ -399,27 +357,107 @@ const Renderer = {
     for(let y=end.y-28;y<end.y+29;y+=10)this.box(end.x-10,y,19,4,"#c98f62",null,0);
   },
   site(game,site) {
-    const selected=game.selectedSite===site,hover=game.siteAt(game.pointer)===site;
-    this.box(site.x-26,site.y-19,52,44,"#61796950",null,7);
-    this.box(site.x-25,site.y-25,50,44,"#cdcdb0",selected?"#fff2bf":"#8c9d85",5);
-    this.box(site.x-19,site.y-19,38,32,"#a0b49c",hover||selected?"#f9e5a5":"#e4ddbe",3);
-    for(const dx of [-21,18])for(const dy of [-21,12])this.circle(site.x+dx,site.y+dy,1.5,"#718673");
-    this.text("+",site.x,site.y-2,25,hover||selected?"#fff3c6":"#eaf1d1","bold","center");
-    this.text(String(site.id+1).padStart(2,"0"),site.x,site.y+26,9,"#55745f","bold","center");
-    if(hover||selected)this.line([[site.x-28,site.y-27],[site.x-28,site.y-12]],"#fff0b7",3);
+    const available=!game.towerAt(site);
+    const selected=available&&game.selectedSite===site,hover=available&&game.siteAt(game.pointer)===site;
+    const theme=game.level.theme,variant=site.id%3,road=game.buildRoad.nearestPoint(site);
+    const dx=site.x-road.x,dy=site.y-road.y,distance=Math.hypot(dx,dy);
+    // 用短小的路肩连接把建造空地纳入场景；连接停在路沿外，不盖住车道。
+    const ground={city:"#b4b399",country:"#b7af80",desert:"#c9ac7d",hills:"#a6ac99",sea:"#c2b08b",forest:"#9ca77e"}[theme];
+    if(distance>33){
+      const edge={x:road.x+dx/distance*33,y:road.y+dy/distance*33};
+      this.line([[edge.x,edge.y],[site.x,site.y]],ground+"50",theme==="sea"?9:13);
+      if(theme!=="sea")this.line([[edge.x,edge.y],[site.x,site.y]],"#7a72521c",2,[2,5]);
+    }
+    ctx.save();ctx.translate(site.x,site.y);
+    // 同一关保持确定的细小差异，避免规则方格感，也不逐帧抖动。
+    ctx.rotate(Math.atan2(dy,dx)+Math.PI/2);
+    const patch=[[-25,-12],[-14,-20-variant],[10,-19],[25,-9],[23,11+variant],[8,19],[-15,17],[-26,5]];
+    const highlight="#e7d9b080",shade="#776a4d55";
+    this.polygon(patch,ground+"45");
+    if(theme==="city"){
+      // 路肩检修位：嵌地铺装、断续路沿与一枚小路锥，没有外框。
+      this.polygon([[-18,-13],[15,-15],[21,10],[-13,13]],"#a7afa359");
+      this.line([[-16,-12],[-4,-13]],highlight,3);
+      this.line([[3,-14],[15,-15]],highlight,3);
+      this.line([[-16,9],[-4,9]],shade,1);
+      this.line([[-2,-9],[-1,8]],"#818c7955",1);
+      this.line([[-14,-1],[15,-2]],"#818c7940",1);
+      this.box(15,8,8,3,"#85755870",null,1);
+      this.polygon([[16,8],[19,0],[22,8]],"#ab896199");
+      this.line([[18,5],[20,5]],"#e2d1a8",1.5);
+    }else if(theme==="country"){
+      // 田边压实土、旧枕木和麦草。
+      this.oval(0,0,19,13,"#c8bc8d60");
+      for(const y of [-3,4])this.line([[-12,y],[12,y-1]],"#948c6455",1,[5,4]);
+      this.line([[-18,10],[-5,12]],"#92836488",3);
+      this.line([[12,-14],[22,-10]],"#92836488",3);
+      for(const x of [-22,19]){
+        this.line([[x,6],[x-3,-2]],"#8b94666e",1.5);
+        this.line([[x,6],[x+3,0]],"#8b94666e",1.5);
+      }
+    }else if(theme==="desert"){
+      // 风蚀砂面与半埋石块，中心留空用于安装设备。
+      this.oval(1,2,21,13,"#e5c79550");
+      this.line([[-21,7],[-10,11],[4,10]],"#ac926451",1.2);
+      this.line([[-10,-10],[1,-13],[16,-11]],"#f0d8a260",1.5);
+      for(const [x,y] of [[-18,-8],[12,9],[18,-7]]){
+        this.polygon([[x-4,y-2],[x+3,y-3],[x+5,y+2],[x-3,y+3]],"#b49b7580");
+        this.line([[x-3,y-2],[x+2,y-3]],highlight,1.2);
+      }
+    }else if(theme==="hills"){
+      // 低矮的碎石平台，用岩层分面替代整齐的混凝土方格。
+      this.polygon([[-20,-10],[-5,-17],[17,-11],[23,3],[9,13],[-16,11]],"#a3aba475");
+      this.line([[-19,8],[-7,12],[8,13],[20,5]],"#737d715c",2.5);
+      this.line([[-16,-9],[-5,-13],[10,-11]],"#d2d4bd88",1.8);
+      this.line([[-5,-10],[-2,-2],[-7,4]],"#7d867662",1);
+      this.polygon([[14,10],[22,8],[25,14],[18,16]],"#949f8b80");
+    }else if(theme==="sea"){
+      // 岛礁上的旧木栈台：非规则沙缘、褪色木板、系缆桩。
+      this.polygon(patch,"#cabd935e");
+      for(let n=0;n<5;n++){
+        const y=-12+n*6;
+        this.line([[-18+(n+variant)%3,y],[17-n%2*2,y]],n%2?"#b0a383aa":"#c5b38baa",5);
+        this.line([[-15,y-1],[13,y-1]],"#e3d1a36b",.8);
+      }
+      for(const [x,y] of [[-18,-13],[17,13]]){
+        this.circle(x,y+1,2.8,"#81785b9c");this.circle(x,y-1,2.2,"#d4c293");
+      }
+      this.line([[-24,14],[-12,20],[5,21]],"#d9e2c74d",1.4);
+    }else{
+      // 林间清理出的苔地，边缘散落树根、落叶，保持中心平坦。
+      this.oval(0,0,20,13,"#c5c69950");
+      this.line([[-20,6],[-13,12],[-3,13]],"#8b8b686e",3);
+      this.line([[15,-14],[20,-8],[18,-1]],"#82936670",3);
+      for(const [x,y] of [[-18,-8],[14,10],[-9,14]]){
+        this.polygon([[x-4,y],[x,y-3],[x+5,y+1],[x,y+3]],"#84945d73");
+        this.line([[x-3,y],[x+3,y]],"#b7bf8760",1);
+      }
+    }
+    // 小号勘测桩是各地貌共同的建造提示；仅交互时画出清晰选区。
+    if(theme!=="sea")for(const x of [-18,18]){
+      this.line([[x,-11],[x,-16]],"#83725399",2);
+      this.line([[x-1,-16],[x+1,-16]],"#d7bc879e",2.2);
+    }
+    ctx.restore();
+    if(hover||selected){
+      this.oval(site.x,site.y,27,21,"#edce7422");
+      for(const side of [-1,1])this.line([[site.x+side*27,site.y+9],[site.x+side*27,site.y-12],[site.x+side*15,site.y-20]],"#d7ae5c",2.4);
+    }
   },
   routeLayers(game) {
     const alternate = game.routeChanged ? game.previousRoad : game.eventRoad;
     if (!alternate) return;
     for (const [a,b] of alternate.edges) {
+      if(game.road.edges.some(([c,d])=>Collision.segmentDistance(a,c,d)<.01&&Collision.segmentDistance(b,c,d)<.01))continue;
       if(game.routeChanged) this.line([[a.x,a.y],[b.x,b.y]],"#827f6e99",CONFIG.roadWidth);
       this.line([[a.x,a.y],[b.x,b.y]],game.routeChanged?"#d8c7a0":"#ffe6a1",game.routeChanged?2:6,[8,10]);
     }
   },
-  field(game) {
+  fieldWorld(game) {
     ctx.save();ctx.beginPath();ctx.roundRect(MAP.x,MAP.y,MAP.w,MAP.h,13);ctx.clip();
     this.cityScenery(game);
-    game.sites.filter(site=>!game.towerAt(site)).forEach(site=>this.site(game,site));
+    this.trafficGround(game);
+    game.sites.forEach(site=>this.site(game,site));
     const tower=game.selected&&game.towerPopupRect&&Collision.inside(game.pointer,game.towerPopupRect)
       ? game.selected : game.pickTower(game.pointer)||game.selected;
     if(tower)this.range(tower,tower.stats.range,tower.spec.color);
@@ -431,22 +469,26 @@ const Renderer = {
     });
     [...game.towers,...game.enemies.filter(e=>!e.dead),...game.towers.flatMap(t=>t.soldiers.filter(s=>s.alive))]
       .sort((a,b)=>a.y-b.y).forEach(actor=>actor instanceof Soldier?this.soldier(actor):actor instanceof Tower?this.tower(actor):this.enemy(actor));
+    this.trafficActors(game);
     if(game.rallyTower&&Collision.inside(game.pointer,MAP))this.flag(game.pointer.x,game.pointer.y,COLORS.gold);
     game.projectiles.forEach(p => this.projectile(p));
     game.beams.forEach(b=>this.attackBeam(b));
     game.effects.forEach(e=>this.attackEffect(e));
     game.floats.forEach(f=>{ctx.globalAlpha=Math.min(1,f.life*2);this.text(f.label,f.x,f.y-(0.85-f.life)*22,12,"#264e48","bold","center");});
     ctx.restore();
+  },
+  field(game) {
+    this.fieldWorld(game);
     this.box(37,124,259,53,"#f3edd4ed","#bdc6ab",8);
     this.text(`${stageLabel(game.levelIndex)} / ${game.level.name}`,50,143,18,"#365e51","bold");
     this.text(game.level.district,51,164,9,"#6d8a73","bold");
     this.box(687,125,222,36,"#254e49e8",null,7);
-    this.text(game.wave<game.level.waves?`第 ${game.wave+1} 波 · ${Math.max(0,Math.ceil(game.prepareTime))} 秒后发动`:`最终波 · 场上 ${game.enemies.length} / 待发 ${game.spawnQueue.length}`,798,143,12,COLORS.ink,"bold","center");
-    this.text(`间隔 ${game.level.waveInterval.toFixed(0)} 秒 · 不等待旧波清空`,899,175,10,"#354d38","bold","right");
+    this.text(game.wave<game.level.waves?(game.spawnQueue.length?`本波待出发 ${game.spawnQueue.length} 辆`:`第 ${game.wave+1} 波 · ${Math.max(0,Math.ceil(game.prepareTime))} 秒后发动`):`最终波 · 场上 ${game.enemies.length} / 待发 ${game.spawnQueue.length}`,798,143,12,COLORS.ink,"bold","center");
+    this.text(`全部出场后 ${Math.ceil(game.waveGap)} 秒 · 提前奖励 +${game.earlyWaveReward} G`,899,175,10,"#354d38","bold","right");
     if(game.level.routeEvent) {
       const event=game.level.routeEvent, warning=!game.routeChanged&&game.wave+1===event.wave;
       this.box(311,183,584,27,game.routeChanged?"#385c4deb":"#654d36ed",warning?COLORS.gold:null,6);
-      this.text(game.routeChanged?`${event.name} · 新路已启用 / 灰路车辆仍需清理`:`第${event.wave}波 ${event.name} · 黄色虚线为新路线${warning?` · ${Math.ceil(game.prepareTime)}秒`:""}`,603,197,12,COLORS.ink,"bold","center");
+      this.text(Traffic.eventText(game),603,197,12,COLORS.ink,"bold","center");
       const gate=game.road.routes[0][1];this.flag(gate.x,gate.y,game.routeChanged?COLORS.mint:COLORS.gold);
       if(game.routeFlash>0){this.box(335,604,420,29,"#284b46ee",COLORS.gold,6);this.text("路线变化！检查新路火力与勤务站集合点",545,619,12,COLORS.gold,"bold","center");}
     }
@@ -457,7 +499,7 @@ const Renderer = {
     }
     if(game.paused) {
       this.box(335,640,280,29,"#143935ee","#d8dab7",6);
-      this.text("Ⅱ 已暂停 · 可布塔升级 · 空格继续",475,655,12,COLORS.ink,"bold","center");
+      this.text(Platform.touch?"Ⅱ 已暂停 · 可布塔升级 · 点顶部继续":"Ⅱ 已暂停 · 可布塔升级 · 空格继续",475,655,12,COLORS.ink,"bold","center");
     }
   },
   sidebar(game) {
@@ -473,7 +515,7 @@ const Renderer = {
       this.text(`${spec.cost} G`,x+293,y+26,14,game.gold>=spec.cost?COLORS.gold:COLORS.red,"bold","right");
       game.buttons.push({x,y,w:308,h:54,towerType:type,action:()=>game.selectBuild(type)});
     }
-    this.text(game.selectedSite?"选择塔型，在已选地块部署":"先点地图中的 + 设备地块",1102,427,12,COLORS.gold,"bold","center");
+    this.text(game.selectedSite?"选择塔型，在已选地块部署":"先点道路旁的预留空地",1102,427,12,COLORS.gold,"bold","center");
     this.box(948, 452, 308, 238, "#193c42", COLORS.border);
     const t = game.selected, enemy = game.inspected;
     if (t) {
@@ -483,7 +525,7 @@ const Renderer = {
       this.text("升级菜单已在地图上的塔旁展开", 964, 540, 14, COLORS.gold, "bold");
       this.text(t.type==="depot"?`队员 ${t.soldiers.filter(s=>s.alive).length} / ${stats.soldierCount} · 阵亡 ${stats.respawn} 秒后补员`:"点击地图上的其他塔可切换选择。", 964, 573, 12, COLORS.muted);
       this.text(t.branch === null ? "二级选择专精，四级完成强化。" : t.paths[t.branch].note, 964, 604, 12, COLORS.muted);
-      this.text("右键 / Esc 收起菜单，继续观察车流。", 964, 657, 11, COLORS.mint);
+      this.text(Platform.touch?"轻触底部取消选择，继续观察车流。":"右键 / Esc 收起菜单，继续观察车流。", 964, 657, 11, COLORS.mint);
     } else if (enemy && !enemy.dead) {
       this.text(enemy.spec.name, 964, 479, 20, enemy.spec.color, "bold");
       this.text(`生命 ${Math.ceil(enemy.health)} / ${Math.ceil(enemy.maxHealth)}`, 964, 514, 14, COLORS.ink);
@@ -503,7 +545,7 @@ const Renderer = {
       this.text("点击塔：升级 / 专精 / 出售 / 索敌", 964, 670, 11, COLORS.mint);
     }
     this.button(game, { x: 948, y: 704, w: 308, h: 43 }, game.wave < game.level.waves ? `${game.wave?"提前发动":"开始"}第 ${game.wave + 1} 波  →` : "最终波 · 清理剩余敌人", () => game.startWave(),
-      { primary: game.wave < game.level.waves && !game.paused, disabled: game.wave >= game.level.waves || game.paused });
+      { primary: game.canStartWave(), disabled: !game.canStartWave() });
     this.button(game, { x: 948, y: 759, w: 147, h: 35 }, "重新挑战", () => { game.modal = "restart"; });
     this.button(game, { x: 1107, y: 759, w: 149, h: 35 }, "返回战役", () => { game.modal = "leave"; });
   },
@@ -515,10 +557,11 @@ const Renderer = {
         () => game.selectSkill(type), { active: game.skill === type, disabled: cooldown > 0, color: spec.color });
       this.text(spec.note, x + 90, 776, 11, COLORS.muted, "normal", "center");
     });
-    this.text(game.skill ? "点击地图选择技能落点" : "指挥提示", 446, 722, 13, game.skill ? COLORS.gold : COLORS.mint, "bold");
+    this.text(Traffic.status(game),446,713,12,COLORS.mint,"bold");
+    this.trafficControls(game,{x:446,y:728,w:450,h:37});
     const tip = game.messageTime > 0 ? game.message : "升级专精应对不同车流；空格暂停，调整防线。";
-    (tip.match(/.{1,29}/g) || []).slice(0, 2).forEach((line, i) => this.text(line, 446, 749 + i * 20, 12, COLORS.muted));
-    this.text(`击毁 ${game.kills} / 已部署 ${game.towers.length} 座防御塔`, 30, 809, 10, COLORS.muted);
+    this.text(tip.slice(0,36),446,781,11,COLORS.muted);
+    this.text(`击毁 ${game.kills} / 已部署 ${game.towers.length} 座交通设施`, 30, 809, 10, COLORS.muted);
   },
   result(game) {
     this.box(0, 0, CONFIG.width, CONFIG.height, "#06111cda", null, 0);
@@ -657,10 +700,10 @@ const Renderer = {
         this.box(x, y, 443, 96, "#1a3442", COLORS.border, 8);
         this.vehicle(type,x+26,y+26);
         this.text(spec.name, x + 48, y + 24, 15, spec.color, "bold");
-        this.text(`基础HP ${spec.hp} / 速度 ${spec.speed}`, x + 420, y + 25, 10, COLORS.muted, "normal", "right");
+        this.text(`基础HP ${Math.round(spec.hp*(spec.boss?CONFIG.bossHealthMultiplier:CONFIG.enemyHealthMultiplier))} / 速度 ${spec.speed}`, x + 420, y + 25, 10, COLORS.muted, "normal", "right");
         this.text(spec.note, x + 17, y + 53, 12, COLORS.ink); this.text(spec.counter, x + 17, y + 77, 11, COLORS.muted);
       });
-      this.button(game, { x: 968, y: 139, w: 122, h: 40 }, "关闭 / Esc", () => { game.modal = null; });
+      this.button(game, { x: 968, y: 139, w: 122, h: 40 }, Platform.touch?"关闭":"关闭 / Esc", () => { game.modal = null; });
     } else {
       this.box(405, 285, 470, 233, "#152e3e", COLORS.border, 15);
       this.text(game.modal === "restart" ? "重新挑战这一关？" : "返回战役地图？", 640, 332, 25, COLORS.ink, "bold", "center");

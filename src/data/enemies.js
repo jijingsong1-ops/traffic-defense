@@ -1,8 +1,12 @@
 "use strict";
 
 const ENEMIES = {
+  raider: { name:"劫掠车", hp:95, speed:63, reward:16, leak:1, armor:.15, visual:"runner", color:"#d98753", busDamage:5,
+    note:"站点预警后出现，靠近公交会停车袭击。", counter:"守住接人站，及时开启护航或冻结" },
+  demolisher: { name:"破拆车", hp:185, speed:48, reward:30, leak:3, armor:.25, visual:"armor", color:"#d99559", bridgeDamage:4,
+    note:"驶上桥面后停车破拆7秒，每秒损伤4点结构。", counter:"桥前集火；冻结或队员拦截可中断破拆" },
   scout: { name: "侦察车", hp: 48, speed: 52, reward: 13, leak: 1, color: "#ead591", icon: "普",
-    note: "基础车流，数量较多。", counter: "速射塔可有效拦截" },
+    note: "基础车流，数量较多。", counter: "路卫塔可有效拦截" },
   runner: { name: "疾行摩托", hp: 32, speed: 91, reward: 14, leak: 1, color: "#ffac7c", icon: "快",
     note: "速度极快，生命较低。", counter: "使用减速或高攻速防御" },
   armor: { name: "装甲运兵车", hp: 140, speed: 37, reward: 24, leak: 2, armor: 0.45, color: "#a9b1c7", icon: "甲",

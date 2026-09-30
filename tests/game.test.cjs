@@ -19,10 +19,49 @@ function setup(saved = null, failStorage = false) {
     window: { addEventListener: noop },
     localStorage: { getItem: () => stored, setItem: (_, value) => { if (failStorage) throw Error('denied'); stored = value; } } };
   vm.createContext(sandbox);
-  const api = vm.runInContext(source + '\n({game, Game, Enemy, Tower, Projectile, Renderer, Progress, LEVELS, CHAPTERS, TOWERS, ENEMIES, CONFIG, Collision, RoadNetwork, applyHit, planConstructionSites, Soldier, Sound, SoundEngine, EVOLUTIONS, evolutionRequirement, MUSIC_TRACKS, ROAD_LAYOUTS})', sandbox);
+  const api = vm.runInContext(source + '\n({game, Game, Enemy, Tower, Projectile, Renderer, Progress, LEVELS, CHAPTERS, TOWERS, ENEMIES, CONFIG, Collision, RoadNetwork, applyHit, planConstructionSites, Soldier, Sound, SoundEngine, Traffic, CivilVehicle, ROAD_TYPES, EVOLUTIONS, evolutionRequirement, MUSIC_TRACKS, ROAD_LAYOUTS, MAP, Platform, MobileLayout})', sandbox);
   return { ...api, sandbox, stored: () => stored };
 }
 function battle() { const api = setup(); api.game.startLevel(0); return api; }
+function press(api,match) {
+  api.Renderer.draw(api.game);
+  const button=api.game.buttons.find(typeof match==='function'?match:b=>b.label===match);
+  assert.ok(button,`missing button: ${match}`);
+  api.Platform.handleTap(api.game,{x:button.x+button.w/2,y:button.y+button.h/2});
+}
+
+test('waves wait for deployment, then 5–10 seconds; early gold scales with saved time',()=>{
+  const {game,CONFIG}=battle(),initial=game.gold;
+  assert.equal(game.startWave(),true);assert.equal(game.gold,initial+CONFIG.earlyGoldMax);
+  const gold=game.gold,gap=game.prepareTime;
+  for(let i=0;i<30;i++)assert.equal(game.startWave(),false);
+  game.update(.1);assert.equal(game.wave,1);assert.equal(game.prepareTime,gap);
+  game.prepareTime=0;assert.equal(game.startWave(true),false,'even automatic waves must finish deployment');
+  game.spawnQueue=[];game.prepareTime=7;game.paused=true;game.update(10);assert.equal(game.prepareTime,7);
+  game.paused=false;assert.equal(game.earlyWaveReward,21);game.update(2);assert.equal(game.earlyWaveReward,15);
+  assert.equal(game.startWave(),true);assert.equal(game.gold,gold+15);assert.equal(game.lastEarlyReward,15);
+  assert.equal(game.startWave(),false);
+  game.spawnQueue=[];game.prepareTime=.01;game.update(.02);
+  assert.equal(game.wave,3);assert.equal(game.lastEarlyReward,0);assert.equal(game.gold,gold+15);
+  assert.equal(game.gapAfterWave(9),5);assert.equal(game.gapAfterWave(20),7.5);assert.equal(game.gapAfterWave(80),10);
+});
+
+test('all current and alternate roads avoid geometric crossings and opposing overlap',()=>{
+  const {LEVELS}=setup();
+  const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+  for(const level of LEVELS)for(const routes of [level.routes,level.routeEvent?.routes||[]]){
+    const edges=routes.flatMap(r=>r.slice(1).map((p,i)=>[r[i],p]));
+    for(let i=0;i<edges.length;i++)for(let j=i+1;j<edges.length;j++){
+      const [a,b]=edges[i],[c,d]=edges[j],label=`${level.id}, segments ${i}/${j}`;
+      assert.ok(!(cross(a,b,c)*cross(a,b,d)<0&&cross(c,d,a)*cross(c,d,b)<0),label);
+      if(cross(a,b,c)===0&&cross(a,b,d)===0){
+        const axis=Math.abs(b[0]-a[0])>Math.abs(b[1]-a[1])?0:1;
+        const overlap=Math.min(Math.max(a[axis],b[axis]),Math.max(c[axis],d[axis]))-Math.max(Math.min(a[axis],b[axis]),Math.min(c[axis],d[axis]));
+        assert.ok(overlap<=0||(b[axis]-a[axis])*(d[axis]-c[axis])>0,label+' opposing lanes');
+      }
+    }
+  }
+});
 
 test('new campaign locks later levels and requires a site before building', () => {
   const { game } = setup();
@@ -32,12 +71,12 @@ test('new campaign locks later levels and requires a site before building', () =
 });
 test('road, map boundary and overlapping towers reject construction', () => {
   const { game } = battle();
-  assert.equal(game.canBuild({ x: 100, y: 390 }), false);
+  assert.equal(game.canBuild(game.road.path(0)[1]), false);
   assert.equal(game.canBuild({ x: 20, y: 200 }), false);
-  game.click({ x: 180, y: 340 }); game.selectBuild('rail');
+  game.click(game.sites[0]); game.selectBuild('rail');
   assert.equal(game.towers.length, 1); assert.equal(game.gold, 270);
-  assert.equal(game.canBuild({ x: 200, y: 300 }), false);
-  game.gold = 0; game.click({ x: 180, y: 480 });
+  assert.equal(game.canBuild(game.sites[0]), false);
+  game.gold = 0; game.click(game.sites[1]);game.selectBuild('rail');
   assert.equal(game.towers.length, 1);
 });
 test('all 48 biome specialization paths charge correctly and are mutually exclusive', () => {
@@ -58,16 +97,16 @@ test('all 48 biome specialization paths charge correctly and are mutually exclus
   }
 });
 test('unaffordable upgrades leave level and economy unchanged; sell refunds investment', () => {
-  const { game } = battle(); game.click({ x: 180, y: 340 }); game.selectBuild('rail'); game.selected = game.towers[0];
+  const { game } = battle(); game.click(game.sites[0]); game.selectBuild('rail'); game.selected = game.towers[0];
   game.gold = 0; assert.equal(game.upgrade(), false); assert.equal(game.selected.level, 1);
   game.sell(); assert.equal(game.gold, 56); assert.equal(game.towers.length, 0);
 });
 test('armor, shield overflow and enhanced shield damage resolve correctly', () => {
   const { game, Enemy } = battle(), route = game.road.path(0);
-  const armor = new Enemy('armor', route); armor.hit(100, game); assert.equal(armor.health, 85);
-  armor.hit(50, game, { pierce: true }); assert.equal(armor.health, 35);
+  const armor = new Enemy('armor', route); armor.hit(100, game); assert.ok(Math.abs(armor.health-(armor.maxHealth-55))<1e-8);
+  armor.hit(50, game, { pierce: true }); assert.ok(Math.abs(armor.health-(armor.maxHealth-105))<1e-8);
   const shield = new Enemy('shield', route); shield.hit(40, game, { shieldMultiplier: 2.5 });
-  assert.equal(shield.shield, 0); assert.equal(shield.health, 81);
+  assert.equal(shield.shield, 0); assert.ok(Math.abs(shield.health-(shield.maxHealth-14))<1e-8);
   shield.sinceHit = 3; shield.update(0.1, game); assert.ok(shield.shield > 0);
 });
 test('support heals allies but cannot heal itself or dead vehicles', () => {
@@ -82,15 +121,15 @@ test('splitter death spawns children on same route and awards only once', () => 
   enemy.x = 210; enemy.y = 402; enemy.segment = 1; game.enemies = [enemy];
   enemy.hit(9999, game); const gold = game.gold; enemy.hit(9999, game);
   const children = game.enemies.filter(e => e.type === 'swarm');
-  assert.equal(children.length, 3); assert.equal(children[0].segment, 1);
-  assert.equal(children[0].path, enemy.path); assert.equal(children[0].x, 210); assert.equal(game.gold, gold);
+  assert.equal(children.length, 3); assert.ok(children[0].segment<=enemy.segment);
+  assert.equal(children[0].path, enemy.path); assert.notEqual(children[0].x,enemy.x);assert.ok(new Set(children.map(e=>`${e.x},${e.y}`)).size===3); assert.equal(game.gold, gold);
 });
 test('control respects boss resistance and burn deals ongoing damage', () => {
   const { game, Enemy, applyHit } = battle(); const boss = new Enemy('boss', game.road.path(0));
   boss.slow(0.5, 2); assert.equal(boss.slowFactor, 0.8);
   boss.stun(3); assert.ok(Math.abs(boss.stunTime - 1.2) < 1e-8);
   applyHit(boss, 0, { burn: 16, duration: 3 }, game);
-  boss.update(0.1, game); assert.ok(Math.abs(boss.health - 948.4) < 1e-8);
+  boss.update(0.1, game); assert.ok(Math.abs(boss.health - (boss.maxHealth-1.6)) < 1e-8);
 });
 test('missile splash, multi-shot, chaining and directional focus have distinct effects', () => {
   const { game, Enemy, Tower, Projectile } = battle(); const route = game.road.path(0);
@@ -118,7 +157,7 @@ test('skills require enemies, pause prevents casting and cooldown prevents reuse
   assert.equal(game.skillCooldowns.strike, 0);
   const enemy = new Enemy('armor', game.road.path(0)); game.enemies = [enemy];
   game.paused = true; game.cast(enemy); assert.equal(enemy.health, enemy.maxHealth);
-  game.paused = false; game.cast(enemy); assert.ok(enemy.dead);
+  game.paused = false; game.cast(enemy); assert.equal(enemy.health,enemy.maxHealth-145);
   assert.equal(game.skillCooldowns.strike, 30); game.selectSkill('strike'); assert.equal(game.skill, null);
 });
 test('paused or modal state freezes timers and simulation', () => {
@@ -130,13 +169,14 @@ test('paused or modal state freezes timers and simulation', () => {
 test('victory persists best stars and unlocks exactly next stage; retry resets run', () => {
   const { game, Progress, stored } = battle(); game.finish(true);
   assert.equal(game.earnedStars, 3); assert.equal(game.unlocked, 1);
-  assert.equal(JSON.parse(stored()).stars[0], 3); assert.equal(Progress.load().stars[0], 3);
+  assert.equal(JSON.parse(stored()).slots[0].stars[0], 3); assert.equal(Progress.load().stars[0], 3);
   game.startLevel(0); game.lives = 1; game.finish(true); assert.equal(game.progress.stars[0], 3);
   game.startLevel(1); assert.equal(game.gold, 378); assert.equal(game.towers.length, 0); assert.equal(game.lives, 20);
 });
 test('defeat never unlocks or saves and replay preserves earlier progress', () => {
   const { game, Enemy } = battle(); game.startWave(); game.spawnQueue = []; game.lives = 1;
-  const enemy = new Enemy('boss', game.road.path(0)); enemy.segment = enemy.path.length - 2; enemy.x = 893.99; enemy.y = 390;
+  const enemy = new Enemy('boss', game.road.path(0)); enemy.segment = enemy.path.length - 2;
+  const exit=enemy.path.at(-1);enemy.x=exit.x-.01;enemy.y=exit.y;
   game.enemies = [enemy]; game.update(0.1); assert.equal(game.screen, 'result'); assert.equal(game.won, false); assert.equal(game.unlocked, 0);
 });
 test('invalid storage and denied storage fail gracefully', () => {
@@ -150,57 +190,12 @@ test('all screens and specialization panels render without exception', () => {
     const tower = new Tower(type, 180, 300); tower.level = level; tower.branch = level >= 3 ? 0 : null;
     game.selected = tower; Renderer.draw(game);
   }
-  for (const modal of ['intel', 'restart', 'leave', 'loadout', 'records']) { game.modal = modal; Renderer.draw(game); }
+  for (const modal of ['intel', 'restart', 'leave', 'loadout', 'saveSlots', 'battleMenu']) { game.modal = modal; Renderer.draw(game); }
   game.modal = null; game.finish(true); Renderer.draw(game);
 });
 
 test('opening stage and all chapter finales are winnable with legal spending and timed waves', () => {
-  const { game, LEVELS, Collision } = setup();
-  for (const stage of (process.env.TD_TEST_STAGES?.split(',').map(Number)||[0,7,15,23,31,39,47])) {
-    game.progress.stars=LEVELS.map((_,i)=>i<stage?3:0);
-    assert.equal(game.startLevel(stage), true);
-    // 按道路覆盖选择真实地块，避免测试依赖某一版地图的手写坐标。
-    const samples = game.road.routes.flatMap(route => route.slice(1).flatMap((b,i) => {
-      const a = route[i], steps = Math.ceil(Collision.distance(a,b)/20), total=route.slice(1).reduce((sum,p,j)=>sum+Collision.distance(route[j],p),0);
-      return Array.from({length:steps},(_,step)=>({x:a.x+(b.x-a.x)*(step+.5)/steps,y:a.y+(b.y-a.y)*(step+.5)/steps,weight:1000/total}));
-    }));
-    const placements = [], coverage=samples.map(()=>0);
-    for (let n=0;n<16;n++) {
-      const score = site => samples.reduce((total,p,i)=>total+(Collision.distance(site,p)<140 ? p.weight/(1+coverage[i]) : 0),0);
-      const candidates=game.sites.filter(site=>!placements.includes(site)).map(site=>({site,score:score(site)}));
-      const chosen=candidates.sort((a,b)=>b.score-a.score)[0].site;
-      placements.push(chosen); samples.forEach((p,i)=>{if(Collision.distance(chosen,p)<140)coverage[i]++;});
-    }
-    let ticks = 0;
-    while (game.screen === 'battle' && ticks < 60000) {
-      if (ticks % 30 === 0) {
-        if (game.towers.length < (stage>=32?4:6)) {
-          const index = game.towers.length;
-          game.click(placements[index]);
-          game.selectBuild(['rail','signal','missile','depot','rail','signal'][index]);
-        } else {
-          const tower = game.towers.find(t => t.level < 4 && (t.level!==2 || [0,1].some(b=>game.branchUnlocked(t.type,t.theme,b))));
-          if (tower) { game.selected = tower; game.upgrade(tower.level === 2 ? ([0,1].find(b=>game.branchUnlocked(tower.type,tower.theme,b))) : null); }
-          else if (game.towers.length < placements.length) {
-            game.click(placements[game.towers.length]); game.selectBuild(game.loadout[game.towers.length%4]);
-          }
-        }
-        for(const tower of game.towers) tower.targetMode=tower.type==='signal'?1:0;
-        if(game.towers[1])game.towers[1].targetMode=2;
-        for (const type of ['strike', 'freeze']) {
-          if (!game.skillCooldowns[type] && game.enemies.length) {
-            const target = game.enemies.find(e => e.spec.boss) || game.enemies[Math.floor(game.enemies.length / 2)];
-            if (game.enemies.length >= 3 || target.spec.boss) { game.selectSkill(type); game.cast(target); }
-          }
-        }
-        if (game.state === 'prepare') game.startWave();
-      }
-      game.update(1 / 60); ticks++;
-      assert.ok(game.gold >= 0, 'no overspending');
-    }
-    assert.equal(game.won, true, `stage ${stage + 1} (${LEVELS[stage].name}), wave ${game.wave}, towers ${game.towers.length}, gold ${game.gold}`);
-    assert.ok(game.progress.stars[stage] > 0);
-  }
+  require('./campaign-simulation.cjs')(setup(),process.env.TD_TEST_STAGES?.split(',').map(Number)||[0,7,15,23,31,39,47]);
 });
 
 test('building is a two-step site-first operation and selling frees the same site', () => {
@@ -216,7 +211,7 @@ test('building is a two-step site-first operation and selling frees the same sit
   assert.equal(game.towers[0].siteId, site.id);
 });
 test('dense construction sites stay close to roads, clear of lanes and other sites, and stable on retry', () => {
-  const { LEVELS, RoadNetwork, Collision, CONFIG, planConstructionSites } = setup();
+  const { LEVELS, RoadNetwork, Collision, CONFIG, MAP, planConstructionSites } = setup();
   for (const level of LEVELS) {
     const road = new RoadNetwork(level, true);
     const sites = level.sites.map(([x,y]) => ({x,y}));
@@ -224,7 +219,7 @@ test('dense construction sites stay close to roads, clear of lanes and other sit
     assert.deepEqual(planConstructionSites(level),level.sites);
     for (const [i,site] of sites.entries()) {
       assert.equal(road.isRoad(site, CONFIG.towerRadius + 4), false, `${level.name} site ${i+1} overlaps road`);
-      assert.ok(site.x >= 50 && site.x <= 896 && site.y >= 188 && site.y <= 652);
+      assert.ok(Collision.inside(site,{x:MAP.x+CONFIG.towerRadius,y:MAP.y+CONFIG.towerRadius,w:MAP.w-2*CONFIG.towerRadius,h:MAP.h-2*CONFIG.towerRadius}));
       assert.ok(Math.min(...road.edges.map(([a,b])=>Collision.segmentDistance(site,a,b))) <= CONFIG.siteRoadOffset+1);
       for (const other of sites.slice(i+1)) assert.ok(Collision.distance(site,other) >= CONFIG.spacing);
     }
@@ -250,81 +245,79 @@ test('boss spawns only in marked stages and only in the final wave', () => {
   });
 });
 test('build popup registers only carried tower choices and prevents double purchase', () => {
-  const { game, Renderer } = battle(); game.click(game.sites[0]); Renderer.draw(game);
+  const api=battle(),{ game, Renderer, Platform } = api; game.click(game.sites[0]); Renderer.draw(game);
   const popup = game.buildPopupRect; assert.ok(popup);
-  game.click({x:popup.x+65,y:popup.y+70});
+  assert.deepEqual(Array.from(game.buttons.filter(b=>b.towerType),b=>b.towerType),Array.from(game.loadout));
+  const card=game.buttons.find(b=>b.towerType==='rail'),point={x:card.x+card.w/2,y:card.y+card.h/2};
+  Platform.handleTap(game,point);
   assert.equal(game.towers.length,1); assert.equal(game.gold,270);
-  game.click({x:popup.x+65,y:popup.y+70}); assert.equal(game.towers.length,1);
+  Platform.handleTap(game,point); assert.equal(game.towers.length,1);
 });
 
 test('map tower popup handles upgrade, specialization, targeting and selling without sidebar actions', () => {
-  const { game, Renderer } = battle(); game.progress.stars.fill(3);
+  const api=battle(),{ game, Renderer, MobileLayout, Platform } = api; game.progress.stars.fill(3);
   const site=game.sites[0]; game.click(site); game.selectBuild('rail');
   game.cancel(); Renderer.draw(game); game.click(site); Renderer.draw(game);
   const tower=game.selected, popup=game.towerPopupRect;
   assert.equal(tower,game.towers[0]); assert.ok(popup);
-  assert.equal(game.buttons.some(b=>b.x>=948&&b.y>=452&&b.y<690),false);
-  game.click({x:popup.x+130,y:popup.y+120}); Renderer.draw(game);
+  press(api,b=>b.label?.startsWith('强化')); Renderer.draw(game);
   assert.equal(tower.level,2); assert.equal(game.gold,210);
   const branches=game.towerPopupRect;
   // 点击菜单文字不会穿透到下面的设备地块。
-  game.click({x:branches.x+15,y:branches.y+78}); assert.equal(game.selected,tower);
-  game.click({x:branches.x+110,y:branches.y+180}); Renderer.draw(game);
+  Platform.handleTap(game,MobileLayout.toScreen(game,{x:branches.x+15,y:branches.y+78})); assert.equal(game.selected,tower);
+  press(api,b=>b.branch===1); Renderer.draw(game);
   assert.equal(tower.branch,1); assert.equal(tower.level,3); assert.equal(game.gold,70);
-  const specialized=game.towerPopupRect;
-  game.click({x:specialized.x+130,y:specialized.y+120}); assert.equal(tower.level,3); // 金币不足
-  game.click({x:specialized.x+70,y:specialized.y+specialized.h-30}); assert.equal(tower.targetMode,1);
-  game.click({x:specialized.x+200,y:specialized.y+specialized.h-30});
+  press(api,b=>b.label?.startsWith('强化')); assert.equal(tower.level,3); // 金币不足
+  press(api,'优先终点'); assert.equal(tower.targetMode,1);
+  press(api,b=>b.label?.startsWith('出售'));
   assert.equal(game.towers.length,0); assert.equal(game.gold,70+Math.floor(280*.7));
   Renderer.draw(game); assert.equal(game.towerPopupRect,null); assert.equal(game.canBuild(site),true);
 });
 
-test('tower menus stay fully inside the map at every site and tower level', () => {
-  const { game, Renderer, LEVELS, Tower }=setup(JSON.stringify({stars:Array(48).fill(3)}));
+test('tower menus stay inside the browser play area at every site and tower level', () => {
+  const { game, LEVELS, Tower, MobileLayout }=setup(JSON.stringify({stars:Array(48).fill(3)}));
+  const layout=MobileLayout.measure();
   for(let index=0;index<LEVELS.length;index++) {
-    game.startLevel(index);
+    game.startLevel(index);MobileLayout.camera(game,layout);
     for(const site of game.sites) for(const level of [1,2,3,4]) {
       game.selected=new Tower('rail',site.x,site.y); game.selected.level=level; game.selected.branch=level>2?0:null;
-      Renderer.towerPopup(game);
+      game.buttons=[];MobileLayout.popup(game,layout,'tower');
       const r=game.towerPopupRect;
-      assert.ok(r.x>=24&&r.y>=112&&r.x+r.w<=924&&r.y+r.h<=686,`${index} site ${site.id}`);
+      const a=MobileLayout.toScreen(game,r),b=MobileLayout.toScreen(game,{x:r.x+r.w,y:r.y+r.h});
+      assert.ok(a.x>=layout.left-.001&&a.y>=layout.top+98-.001&&b.x<=layout.right+.001&&b.y<=layout.footer-10+.001,`${index} site ${site.id}`);
     }
   }
 });
 
 test('chapter previews remain locked and crossing a chapter opens the correct next map', () => {
-  const { game, Renderer, LEVELS, CHAPTERS }=setup(JSON.stringify({stars:[3,2,1,3,3,3,3,0],decks:[['rail','slow']]}));
+  const api=setup(JSON.stringify({stars:[3,2,1,3,3,3,3,0],decks:[['rail','slow']]})),{ game, Renderer, LEVELS, CHAPTERS }=api;
   assert.equal(CHAPTERS.length,6); assert.equal(LEVELS.length,48);
   assert.equal(game.progress.stars.length,48);
   assert.deepEqual(Array.from(game.progress.stars.slice(0,4)),[3,2,1,3]);
-  game.selectChapter(2); assert.equal(game.menuChapter,2); assert.equal(game.menuLevel,16);
+  game.screen='menu';game.selectChapter(2); assert.equal(game.menuChapter,2); assert.equal(game.menuLevel,16);
   assert.equal(game.startLevel(16),false);
-  Renderer.draw(game); game.modal='records'; Renderer.draw(game); game.modal=null;
+  Renderer.draw(game); game.openLevel(16); Renderer.draw(game); game.modal=null;
   game.startLevel(7); game.finish(true); Renderer.draw(game);
-  game.click({x:640,y:494});
+  press(api,'章节地图');
   assert.equal(game.screen,'menu'); assert.equal(game.menuChapter,1); assert.equal(game.menuLevel,8);
   assert.equal(game.unlocked,8); assert.equal(game.startLevel(8),true); assert.equal(game.startLevel(9),false);
 });
 
-test('timed waves overlap living enemies and preserve earlier queued enemy scaling', () => {
-  const {game,Enemy,CONFIG,ENEMIES}=battle();
-  game.startWave();
-  const sentinel=new Enemy('boss',game.road.path(0));sentinel.stunTime=999;sentinel.health=1e9;
-  game.enemies.push(sentinel); game.spawnTimer=9;
-  const queued=game.spawnQueue.length; game.prepareTime=.01; const gold=game.gold;
-  game.update(.02);
-  assert.equal(game.wave,2); assert.ok(game.enemies.includes(sentinel));
-  assert.ok(game.spawnQueue.length>queued); assert.equal(game.gold,gold+CONFIG.waveReward);
-  assert.equal(game.spawnQueue[0].wave,1);
-  game.spawnTimer=0;game.update(.01);
-  assert.equal(game.enemies[1].maxHealth,ENEMIES[game.enemies[1].type].hp*game.level.scale);
+test('automatic countdown starts after the last spawn and overlaps living enemies without free gold',()=>{
+  const {game,Enemy,CONFIG,ENEMIES}=battle();game.startWave();
+  const sentinel=new Enemy('boss',game.road.path(0));sentinel.x+=160;sentinel.stunTime=999;sentinel.health=1e9;
+  game.enemies.push(sentinel);game.spawnQueue=[game.spawnQueue[0]];game.spawnTimer=0;
+  const gap=game.waveGap,gold=game.gold;game.update(.01);
+  assert.equal(game.spawnQueue.length,0);assert.equal(game.prepareTime,gap);assert.equal(game.wave,1);
+  const unit=game.enemies[1];assert.equal(unit.maxHealth,ENEMIES[unit.type].hp*game.level.scale*CONFIG.enemyHealthMultiplier);
+  game.update(gap-.01);assert.equal(game.wave,1);game.update(.02);assert.equal(game.wave,2);
+  assert.equal(game.gold,gold);assert.ok(game.enemies.includes(sentinel));
   const seconds=game.prepareTime;game.paused=true;game.update(10);assert.equal(game.prepareTime,seconds);
   game.paused=false;game.modal='intel';game.update(10);assert.equal(game.prepareTime,seconds);game.modal=null;
-  while(game.wave<game.level.waves)game.startWave();
-  const finalGold=game.gold;assert.equal(game.startWave(),false);assert.equal(game.gold,finalGold);
+  while(game.wave<game.level.waves){game.spawnQueue=[];game.startWave(true);}
+  assert.equal(game.startWave(),false);assert.equal(game.gold,gold);
   game.spawnQueue=[];game.update(.01);assert.equal(game.screen,'battle');
-  sentinel.dead=true;game.enemies.forEach(e=>e.dead=true);game.update(.01);
-  assert.equal(game.won,true);assert.equal(game.wave,game.level.waves);
+  game.enemies.forEach(e=>e.dead=true);game.update(.01);assert.equal(game.won,true);
 });
 
 test('clearing a wave early does not reset the countdown or start the next wave early', () => {
@@ -342,7 +335,7 @@ test('progress gates biome evolution without charging for locked paths or repeat
     game.progress.stars[threshold-1]=1;assert.equal(game.upgrade(branch),true);
   }
   game.progress.stars.fill(0);game.startLevel(0);game.finish(true);
-  assert.ok(game.earnedEvolutions.includes('狙击塔'));const count=game.completed;
+  assert.ok(game.earnedEvolutions.includes('测速塔'));const count=game.completed;
   game.startLevel(0);game.finish(true);assert.equal(game.completed,count);assert.equal(game.earnedEvolutions.length,0);
 });
 
@@ -355,7 +348,7 @@ test('six biomes have eight distinct stages each, valid enemy pools, and chapter
     assert.equal(levels.filter(l=>l.boss).length,2);assert.ok(ENEMIES[c.boss].boss);
     assert.ok(c.pool.every(type=>ENEMIES[type]));
     for(const level of levels) {
-      assert.ok(level.waveInterval>=20&&level.waveInterval<=32);
+      assert.ok(level.waves>=6);
       for(const route of level.routes)for(let i=1;i<route.length;i++)assert.notDeepEqual(route[i],route[i-1]);
     }
   }
@@ -379,7 +372,7 @@ test('all 48 battle maps, six bestiaries and all tower pages fit the canvas and 
   game.screen='menu';
   for(let chapter=0;chapter<CHAPTERS.length;chapter++) {
     game.selectChapter(chapter);game.modal=null;Renderer.draw(game);
-    for(const modal of ['records','intel']){game.modal=modal;game.intelChapter=chapter;Renderer.draw(game);}
+    for(const modal of ['loadout','intel']){game.modal=modal;game.libraryChapter=chapter;game.intelChapter=chapter;Renderer.draw(game);}
   }
   game.modal='loadout';
   for(let page=0;page<3;page++) {
@@ -423,8 +416,7 @@ test('death, selling, enemy death and rally relocation release blockers; respawn
 });
 test('rally movement obeys road and range limits and can be selected from the map popup',()=>{
   const api=battle(),{game,Renderer,Enemy}=api,t=garrison(api);
-  game.selected=t;Renderer.draw(game);const r=game.towerPopupRect;
-  game.click({x:r.x+70,y:r.y+r.h-30});assert.equal(game.rallyTower,t);
+  game.selected=t;press(api,'设置集合点');assert.equal(game.rallyTower,t);
   Renderer.draw(game);assert.equal(game.towerPopupRect,null);
   const previous=t.rally;assert.equal(game.setRally({x:880,y:390}),false);assert.equal(t.rally,previous);
   assert.equal(game.setRally({x:t.x,y:t.y}),false);
@@ -567,7 +559,7 @@ test('route-change spawning uses the new road and split children continue their 
 });
 
 test('all route alternatives reserve legal construction space and each chapter varies topology', () => {
-  const {LEVELS,RoadNetwork,CONFIG}=setup();
+  const {LEVELS,RoadNetwork,CONFIG,Collision,MAP}=setup();
   for(let chapter=0;chapter<6;chapter++) {
     const levels=LEVELS.filter(l=>l.chapter===chapter);
     const signatures=levels.map(l=>[l.routes.length,...l.routes.map(r=>r.length)].join(','));
@@ -575,7 +567,7 @@ test('all route alternatives reserve legal construction space and each chapter v
     for(const level of levels) {
       const network=new RoadNetwork(level,true);
       for(const route of network.routes)for(let i=1;i<route.length;i++){
-        assert.ok(route[i].x>=52&&route[i].x<=894&&route[i].y>=185&&route[i].y<=630);
+        assert.ok(Collision.inside(route[i],MAP));
         assert.notDeepEqual(route[i],route[i-1]);
       }
       for(const [x,y] of level.sites)assert.equal(network.isRoad({x,y},CONFIG.towerRadius+4),false);
@@ -681,4 +673,242 @@ test('all signal and guard attack animations render and simulation pause freezes
     assert.equal(t.fireTime,fire);assert.deepEqual(game.effects.map(e=>e.life),lives);assert.equal(enemy.health,health);
     t.update(.1,game);assert.ok(t.fireTime<fire);
   }
+});
+
+
+test('three save slots migrate legacy progress, sanitize data and isolate all writes',()=>{
+  const {Progress,game,stored}=setup(JSON.stringify({schema:3,stars:[3,2,0]}));
+  assert.equal(Progress.list().length,3);assert.equal(Progress.list()[0].createdAt,0);
+  assert.equal(Progress.load(0).stars[1],2);assert.equal(Progress.list()[1],null);
+  assert.ok(Progress.select(0));assert.equal(JSON.parse(stored()).schema,4);
+  const second=Progress.blank();second.stars[0]=1;assert.ok(Progress.save(second,1));
+  const created=Progress.list()[1].createdAt;assert.ok(created>0);
+  second.stars[1]=3;Progress.save(second,1);assert.equal(Progress.list()[1].createdAt,created);
+  assert.equal(Progress.list()[0].stars[1],2);assert.equal(Progress.list()[2],null);
+  const before=stored();assert.equal(Progress.save(second,3),false);assert.equal(Progress.select(-1),false);assert.equal(stored(),before);
+  const denied=setup(stored(),true);denied.game.newCampaign();denied.game.chooseSaveSlot(0);denied.game.newCampaign(true);
+  assert.equal(denied.game.saveFailed,true);assert.equal(denied.Progress.load(0).stars[0],3);
+  assert.equal(denied.Progress.load(1).stars[1],3);
+  const malformed=setup(JSON.stringify({schema:4,activeSlot:9,slots:[{stars:[7,-4,'x'],createdAt:-2},{bad:true},null,{stars:[3]}]}));
+  assert.deepEqual([...malformed.Progress.load().stars.slice(0,3)],[3,0,0]);assert.equal(malformed.Progress.list().length,3);
+});
+
+test('vehicles leave entrance space, follow slower traffic and separate split children',()=>{
+  const {game,Enemy,CONFIG,Collision}=battle(),path=[{x:100,y:390},{x:430,y:390},{x:430,y:600}];
+  const lead=new Enemy('armor',path),fast=new Enemy('runner',path);lead.x=200;fast.x=135;game.enemies=[lead,fast];
+  for(let i=0;i<480;i++){
+    lead.update(1/60,game);fast.update(1/60,game);
+    assert.ok(fast.remaining-lead.remaining>=(lead.bodyLength+fast.bodyLength)/2+CONFIG.trafficGap-.001);
+  }
+  game.startLevel(0);game.startWave();game.spawnQueue=[{type:'armor',scale:1,wave:1},{type:'runner',scale:1,wave:1}];
+  game.update(.01);const first=game.enemies[0];first.stunTime=2;game.update(.8);assert.equal(game.enemies.length,1);
+  first.stunTime=0;for(let i=0;i<100;i++)game.update(.02);
+  assert.ok(game.enemies.length>=2);assert.ok(Collision.distance(game.enemies[0],game.enemies[1])>25);
+  const splitter=new Enemy('splitter',path);splitter.x=105;game.enemies=[splitter];splitter.hit(9999,game);
+  const children=game.enemies.filter(e=>!e.dead);assert.equal(children.length,3);
+  assert.equal(new Set(children.map(e=>`${e.x},${e.y}`)).size,3);
+});
+
+test('stronger health keeps the smaller vehicle art separate from combat size',()=>{
+  const {game,Enemy,ENEMIES,CONFIG,Renderer}=battle();
+  for(const [type,spec] of Object.entries(ENEMIES)){
+    const enemy=new Enemy(type,game.road.path(0),2);
+    assert.equal(enemy.maxHealth,spec.hp*2*(spec.boss?CONFIG.bossHealthMultiplier:CONFIG.enemyHealthMultiplier));
+    Renderer.vehicle(type,100,200,Math.PI/4,true,true);Renderer.enemy(enemy);
+  }
+  assert.equal(CONFIG.enemyVisualScale,.88);
+});
+
+test('each chapter offers manual forks and all four traffic objectives with announced route events',()=>{
+  const {LEVELS,RoadNetwork,Traffic}=setup();
+  for(let c=0;c<6;c++){
+    const levels=LEVELS.filter(l=>l.chapter===c);
+    assert.equal(new Set(levels.map(l=>l.mission)).size,4);
+    assert.ok(levels.some(l=>Traffic.fork(new RoadNetwork(l))),`chapter ${c} manual fork`);
+  }
+  assert.equal(new Set(LEVELS.filter(l=>l.routeEvent).map(l=>l.routeEvent.kind)).size,4);
+});
+
+test('manual navigation reroutes only upstream vehicles and never teleports or rewinds them',()=>{
+  const {game,Enemy,CivilVehicle,Traffic,CONFIG}=battle(),old=game.road.path(0);
+  const early=new Enemy('scout',old),late=new Enemy('scout',old),bus=new CivilVehicle('bus',old);
+  early.x+=30;late.segment=1;Object.assign(late,old[1]);late.x+=5;
+  game.enemies=[early,late];game.traffic.civilians=[bus];
+  const x=early.x,health=early.health;
+  assert.equal(Traffic.switchRoute(game),true);assert.equal(game.traffic.branch,1);
+  assert.equal(early.path,game.road.path(1));assert.equal(bus.path,old);assert.equal(late.path,old);
+  assert.equal(early.x,x);assert.equal(early.health,health);assert.equal(late.segment,1);
+  assert.equal(Traffic.switchRoute(game),false);assert.equal(game.traffic.branch,1);
+  game.paused=true;const cooldown=game.traffic.switchCooldown;game.update(10);assert.equal(game.traffic.switchCooldown,cooldown);
+  game.paused=false;Traffic.update(game,CONFIG.trafficSwitchCooldown);assert.equal(Traffic.switchRoute(game),true);
+});
+
+test('road speed affects movement, heavy vehicles slow more on sand and curves decelerate',()=>{
+  const {game,Enemy,Traffic,LEVELS}=battle();
+  const p=[{x:100,y:300},{x:200,y:300},{x:600,y:300},{x:800,y:300}];
+  const fast=new Enemy('scout',p);fast.segment=1;fast.x=300;game.enemies=[fast];
+  fast.update(1,game);assert.ok(Math.abs(fast.x-300-fast.spec.speed*1.18)<.001);
+  game.progress.stars.fill(3);game.startLevel(16);
+  const light=new Enemy('scout',p),heavy=new Enemy('armor',p);for(const car of [light,heavy]){car.segment=1;car.x=300;}
+  assert.ok(Traffic.speed(game,heavy)<Traffic.speed(game,light));
+  const straight=Traffic.speed(game,light);light.x=590;light.path=[...p.slice(0,3),{x:600,y:500}];
+  assert.ok(Traffic.speed(game,light)<straight);
+});
+
+test('bus objective requires both deliveries after the last hostile is gone',()=>{
+  const {game,Traffic,CivilVehicle}=battle();game.progress.stars.fill(3);game.startLevel(1);
+  game.wave=2;Traffic.onWave(game);assert.equal(game.traffic.pending.length,1);
+  game.wave=game.level.waves-1;Traffic.onWave(game);assert.equal(game.traffic.pending.length,2);
+  game.traffic.pending=[];game.wave=game.level.waves;game.state='wave';game.enemies=[];game.spawnQueue=[];
+  game.update(.01);assert.equal(game.screen,'battle');
+  const path=game.road.path(0),car=new CivilVehicle('bus',path);car.segment=path.length-2;Object.assign(car,path.at(-1));
+  game.traffic.civilians=[car];game.update(.01);assert.equal(game.traffic.delivered,1);assert.equal(game.screen,'battle');
+  const second=new CivilVehicle('bus',path);second.segment=path.length-2;Object.assign(second,path.at(-1));
+  game.traffic.civilians=[second];game.update(.01);assert.equal(game.won,true);assert.equal(game.screen,'result');
+});
+
+test('bus damage can fail the mission and escort protection prevents damage while active',()=>{
+  const {game,Traffic,CivilVehicle,Enemy}=battle();game.progress.stars.fill(3);game.startLevel(1);
+  const path=game.road.path(0),bus=new CivilVehicle('bus',path);game.traffic.civilians=[bus];game.enemies=[new Enemy('scout',path)];
+  assert.equal(Traffic.action(game),true);bus.update(1,game);assert.equal(bus.health,100);
+  game.traffic.activeTime=0;bus.health=1;Object.assign(bus,path[0]);Traffic.update(game,1);
+  assert.equal(game.screen,'result');assert.equal(game.won,false);assert.match(game.failureReason,/公交/);
+});
+
+test('ambulance congestion, priority passage, deadline failure and paused timers are real rules',()=>{
+  const {game,Traffic,CivilVehicle,Enemy}=battle();game.progress.stars.fill(3);game.startLevel(2);
+  const path=game.road.path(0),car=new CivilVehicle('emergency',path);game.traffic.civilians=[car];game.enemies=[new Enemy('scout',path)];
+  car.update(1,game);assert.equal(car.x,path[0].x);assert.equal(car.blocked,true);
+  assert.equal(Traffic.action(game),true);car.update(.1,game);assert.ok(car.x!==path[0].x||car.y!==path[0].y);
+  assert.equal(Traffic.action(game),false);game.paused=true;const time=car.deadline;game.update(10);assert.equal(car.deadline,time);
+  game.paused=false;car.deadline=.01;Traffic.update(game,.02);assert.equal(game.won,false);assert.match(game.failureReason,/时限/);
+});
+
+test('toll gate blocks approaching cars; bridge load and paid repair obey integrity and cooldown',()=>{
+  const {game,Traffic,Enemy}=battle(),path=game.road.path(0),enemy=new Enemy('scout',path);
+  enemy.segment=path.length-2;Object.assign(enemy,path.at(-1));enemy.x-=35;game.enemies=[enemy];
+  assert.equal(Traffic.action(game),true);const x=enemy.x;enemy.update(.1,game);assert.equal(enemy.x,x);
+  Traffic.onEscape(game,enemy);assert.equal(game.traffic.integrity,100-enemy.spec.leak*8);
+  game.progress.stars.fill(3);game.startLevel(3);const boss=new Enemy('boss',game.road.path(0));Object.assign(boss,game.traffic.bridge);game.enemies=[boss];
+  Traffic.update(game,5);assert.ok(game.traffic.integrity<100);game.traffic.integrity=50;const gold=game.gold;
+  assert.equal(Traffic.action(game),true);assert.equal(game.gold,gold-60);assert.equal(game.traffic.integrity,80);
+  assert.equal(Traffic.action(game),false);game.traffic.integrity=.01;Traffic.update(game,1);assert.match(game.failureReason,/桥梁/);
+});
+
+test('traffic events broadcast one wave early, preserve escort position and display countdown',()=>{
+  const {game,Traffic,CivilVehicle,Sound}=battle();game.progress.stars.fill(3);game.startLevel(3);
+  const heard=[];Sound.play=k=>heard.push(k);game.wave=game.level.routeEvent.wave-1;Traffic.onWave(game);
+  assert.ok(heard.includes('radio-construction'));Traffic.onWave(game);assert.equal(heard.filter(k=>k==='radio-construction').length,1);
+  game.prepareTime=6;assert.match(Traffic.eventText(game),/6秒/);
+  const bus=new CivilVehicle('bus',game.road.path(0));bus.x+=20;game.traffic.civilians=[bus];const x=bus.x;
+  game.wave++;assert.equal(game.applyRouteEvent(),true);assert.equal(bus.x,x);assert.equal(bus.path,game.road.path(0));
+});
+
+test('engine distance attenuation becomes silent outside active battle',()=>{
+  const {game,Enemy,Traffic}=battle(),car=new Enemy('scout',game.road.path(0));game.enemies=[car];
+  car.x=474;car.y=650;const near=Traffic.engineLevel(game);car.x=60;car.y=200;assert.ok(near>Traffic.engineLevel(game));
+  game.paused=true;assert.equal(Traffic.engineLevel(game),0);game.paused=false;game.modal='battleMenu';assert.equal(Traffic.engineLevel(game),0);
+});
+
+test('junction signs never steal the center of legal construction pads',()=>{
+  const {game,LEVELS}=setup();game.progress.stars.fill(3);
+  for(let i=0;i<LEVELS.length;i++){
+    game.startLevel(i);if(!game.traffic.fork)continue;
+    for(const site of game.sites){game.cancel();game.click(site,true);assert.equal(game.selectedSite,site,`level ${i}, pad ${site.id}`);}
+  }
+});
+
+test('ambulance ignores cars behind it and cars on a parallel road',()=>{
+  const {game,Enemy,CivilVehicle}=battle();game.progress.stars.fill(3);game.startLevel(2);
+  const path=[{x:100,y:300},{x:500,y:300}],car=new CivilVehicle('emergency',path),enemy=new Enemy('scout',path);
+  car.x=220;enemy.x=190;game.enemies=[enemy];car.update(.1,game);assert.equal(car.blocked,false);assert.ok(car.x>220);
+  car.x=220;enemy.x=240;enemy.y=340;car.update(.1,game);assert.equal(car.blocked,false);
+  car.x=220;enemy.y=300;car.update(.1,game);assert.equal(car.blocked,true);assert.equal(car.x,220);
+});
+
+test('temporary diversions expire, auto traffic uses all lanes, and branch speeds differ',()=>{
+  const {game,Traffic,Enemy,CONFIG}=battle();
+  assert.equal(Traffic.path(game,0),game.road.path(0));assert.equal(Traffic.path(game,1),game.road.path(1));
+  const fast=new Enemy('scout',game.road.path(0)),slow=new Enemy('scout',game.road.path(1));
+  for(const e of [fast,slow]){e.segment=2;Object.assign(e,e.path[2]);}
+  assert.ok(Traffic.speed(game,fast)>Traffic.speed(game,slow)*1.4);
+  assert.equal(Traffic.switchRoute(game,1),true);assert.equal(Traffic.path(game,0),slow.path);
+  Traffic.update(game,CONFIG.diversionDuration+.01);assert.equal(Traffic.path(game,0),fast.path);
+  assert.equal(Traffic.switchRoute(game,0),false);assert.ok(game.traffic.switchCooldown>0);
+  Traffic.update(game,CONFIG.trafficSwitchCooldown);assert.equal(Traffic.switchRoute(game,0),true);
+  assert.equal(Traffic.switchRoute(game,-1),false);
+});
+
+test('route choices are clickable in the map toolbar and cancellation closes the menu',()=>{
+  const api=battle(),{game,Renderer}=api;Renderer.draw(game);
+  press(api,'分流调度');assert.equal(game.traffic.routeMenu,true);Renderer.draw(game);
+  const choices=game.buttons.filter(b=>Number.isInteger(b.routeIndex));assert.equal(choices.length,2);
+  press(api,b=>b.routeIndex===1);assert.equal(game.traffic.branch,1);assert.ok(game.traffic.diversionTime>0);
+  press(api,b=>b.label?.startsWith('定向'));assert.equal(game.traffic.routeMenu,true);
+  game.cancel();assert.equal(game.traffic.routeMenu,false);
+});
+
+test('bus departure offers a bounded dispatch window and never permits free duplicates',()=>{
+  const {game,Traffic,CONFIG}=battle();game.progress.stars.fill(3);game.startLevel(1);game.wave=2;
+  Traffic.onWave(game);Traffic.onWave(game);assert.equal(game.traffic.pending.length,1);
+  Traffic.update(game,4);assert.equal(game.traffic.civilians.length,0);assert.equal(game.traffic.pending[0].releaseIn,CONFIG.busDispatchWindow-4);
+  game.paused=true;assert.equal(Traffic.dispatch(game),false);const time=game.traffic.pending[0].releaseIn;game.update(9);assert.equal(game.traffic.pending[0].releaseIn,time);
+  game.paused=false;assert.equal(Traffic.dispatch(game),true);assert.equal(Traffic.dispatch(game),false);
+  Traffic.update(game,.01);assert.equal(game.traffic.civilians.length,1);assert.equal(game.traffic.pending.length,0);
+  game.startLevel(1);game.wave=2;Traffic.onWave(game);Traffic.update(game,CONFIG.busDispatchWindow+.01);
+  assert.equal(game.traffic.civilians.length,1,'deadline automatically releases waiting bus');
+});
+
+test('buses must stop for boarding; ambushes are warned, spaced and can be interrupted',()=>{
+  const {game,Traffic,CivilVehicle,CONFIG,Enemy}=battle();game.progress.stars.fill(3);game.startLevel(1);
+  const bus=new CivilVehicle('bus',game.road.path(0)),stop=bus.stops[0];game.traffic.civilians=[bus];
+  Object.assign(bus,Traffic.pointAt(bus.path,stop.distance-180));bus.travelled=stop.distance-180;
+  bus.update(.1,game);assert.ok(stop.alert>0);assert.equal(game.enemies.length,0);
+  for(let i=0;i<31;i++)bus.update(.1,game);
+  assert.ok(game.enemies.length>0);assert.ok(game.enemies.every(e=>e.type==='raider'&&e.raidTarget===bus));
+  if(game.enemies.length===2)assert.ok(Math.hypot(game.enemies[0].x-game.enemies[1].x,game.enemies[0].y-game.enemies[1].y)>=38);
+  game.enemies=[];stop.raided=true;stop.waiting=CONFIG.busStopTime;Object.assign(bus,stop);bus.travelled=stop.distance;bus.health=100;
+  const x=bus.x,y=bus.y;bus.update(1,game);assert.equal(bus.x,x);assert.equal(bus.y,y);assert.equal(bus.atStop,true);assert.equal(stop.waiting,CONFIG.busStopTime-1);
+  const raid=new Enemy('raider',bus.path);Object.assign(raid,{x:bus.x+10,y:bus.y});game.enemies=[raid];
+  raid.stunTime=2;bus.update(.1,game);assert.equal(bus.health,100);
+  raid.stunTime=0;bus.update(.1,game);assert.ok(bus.health<100);
+  const hp=bus.health;Traffic.action(game);bus.update(.1,game);assert.equal(bus.health,hp);
+});
+
+test('healthy bus delivery earns more supply and reduces skill cooldown only once',()=>{
+  const {game,CivilVehicle,CONFIG}=battle();game.progress.stars.fill(3);game.startLevel(1);
+  const car=new CivilVehicle('bus',game.road.path(0));car.health=75;game.skillCooldowns={strike:20,freeze:5};
+  const gold=game.gold;car.arrive(game);
+  assert.equal(game.gold-gold,CONFIG.busRewardBase+Math.floor(75*CONFIG.busRewardHealth));
+  assert.equal(game.skillCooldowns.strike,12);assert.equal(game.skillCooldowns.freeze,0);
+  const after=game.gold;car.arrive(game);assert.equal(game.gold,after);assert.equal(game.traffic.delivered,1);
+});
+
+test('bridge damage follows both old and changed routes, and counts each entry only once',()=>{
+  const {game,Traffic,Enemy}=battle();game.progress.stars.fill(3);game.startLevel(3);
+  const oldPath=game.road.path(0),oldBridge=game.traffic.bridge;
+  game.wave=game.level.routeEvent.wave;game.applyRouteEvent();
+  const newPath=game.road.path(0),newBridge=game.traffic.bridge;
+  assert.notEqual(oldBridge.key,newBridge.key);
+  const old=new Enemy('armor',oldPath),current=new Enemy('armor',newPath);
+  Object.assign(old,{x:oldBridge.x,y:oldBridge.y});Object.assign(current,{x:newBridge.x,y:newBridge.y});
+  game.enemies=[old,current];Traffic.update(game,1);
+  assert.ok(game.traffic.integrity<98);const hp=game.traffic.integrity;
+  Traffic.update(game,1);assert.ok(Math.abs(hp-game.traffic.integrity-.44)<1e-7);
+  assert.ok(Traffic.status(game).includes('受损'));
+});
+
+test('demolition waves siege the actual deck, stun interrupts attacks and neglect destroys it',()=>{
+  const {game,Traffic,Enemy,CONFIG}=battle();game.progress.stars.fill(3);game.startLevel(3);
+  assert.equal(game.wavePlan(1).includes('demolisher'),false);assert.equal(game.wavePlan(2).filter(t=>t==='demolisher').length,1);
+  assert.equal(game.wavePlan(6).filter(t=>t==='demolisher').length,2);
+  const enemy=new Enemy('demolisher',game.road.path(0)),span=game.traffic.bridge;
+  Object.assign(enemy,{x:span.x,y:span.y,segment:span.segment});game.enemies=[enemy];
+  const x=enemy.x,y=enemy.y;enemy.update(.1,game);assert.equal(enemy.x,x);assert.equal(enemy.y,y);
+  Traffic.update(game,1);const hp=game.traffic.integrity;assert.ok(hp<95);
+  enemy.stunTime=5;Traffic.update(game,1);assert.ok(Math.abs(hp-game.traffic.integrity-.22)<1e-7);
+  enemy.stunTime=0;game.traffic.integrity=2;Traffic.update(game,1);assert.equal(game.won,false);assert.match(game.failureReason,/桥梁/);
+  game.startLevel(3);const outside=new Enemy('demolisher',game.road.path(0));game.enemies=[outside];
+  Traffic.update(game,5);assert.equal(game.traffic.integrity,100,'no arbitrary damage away from bridge');
+  assert.ok(CONFIG.bossHealthMultiplier>=1.9&&CONFIG.enemyHealthMultiplier>=1.4);
 });

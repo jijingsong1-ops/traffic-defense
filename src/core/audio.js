@@ -1,22 +1,23 @@
 "use strict";
 
-// 合成音效和轻量配乐，无外部音频文件；必须在首次真实点击或按键后创建音频上下文。
+// 合成音效与轻量配乐，交通广播从包内WAV播放；首次真实点击后启用音频上下文。
 class SoundEngine {
   constructor() {
     this.enabled=true;this.musicEnabled=true;this.context=null;this.voices=new Set();this.musicVoices=new Set();this.theme=null;this.last={};this.note=0;this.nextMusic=0;this.unavailable=false;
-    try{const saved=JSON.parse(localStorage.getItem("traffic-defense-audio"));if(saved){this.enabled=saved.effects!==false;this.musicEnabled=saved.music!==false;}}catch{}
+    try{const saved=JSON.parse(Platform.storage.getItem("traffic-defense-audio"));if(saved){this.enabled=saved.effects!==false;this.musicEnabled=saved.music!==false;}}catch{}
   }
   unlock() {
     try {
       if(!this.context) {
-        const Audio=window.AudioContext||window.webkitAudioContext;
-        if(!Audio){this.unavailable=true;return;}
-        this.context=new Audio();this.master=this.context.createGain();this.master.gain.value=CONFIG.audioVolume;this.master.connect(this.context.destination);
+        this.context=Platform.createAudioContext();
+        if(!this.context){this.unavailable=true;return;}
+        this.master=this.context.createGain();this.master.gain.value=CONFIG.audioVolume;this.master.connect(this.context.destination);
       }
       if(this.context.state==="suspended")this.context.resume().catch(()=>{});
     }catch{this.unavailable=true;}
   }
   stop(channel = null) {
+    if(channel!=="music"&&this.radio){this.radio.pause();this.radio=null;}
     for (const voice of [...this.voices]) {
       const music = this.musicVoices.has(voice);
       if (channel && (channel === "music") !== music) continue;
@@ -28,10 +29,10 @@ class SoundEngine {
   toggle(kind) {
     if(kind==="music")this.musicEnabled=!this.musicEnabled;else this.enabled=!this.enabled;
     this.stop(kind === "music" ? "music" : "effects");this.unlock();
-    try{localStorage.setItem("traffic-defense-audio",JSON.stringify({effects:this.enabled,music:this.musicEnabled}));}catch{}
+    try{Platform.storage.setItem("traffic-defense-audio",JSON.stringify({effects:this.enabled,music:this.musicEnabled}));}catch{}
   }
   tone(frequency,duration=.12,wave="triangle",volume=.15,delay=0,endFrequency=frequency,channel="effects") {
-    const c=this.context;if(!c||c.state!=="running"||document.hidden||this.voices.size>=24)return;
+    const c=this.context;if(!c||c.state!=="running"||Platform.hidden||this.voices.size>=24)return;
     const oscillator=c.createOscillator(),gain=c.createGain(),start=c.currentTime+delay;
     oscillator.type=wave;oscillator.frequency.setValueAtTime(frequency,start);oscillator.frequency.exponentialRampToValueAtTime(Math.max(25,endFrequency),start+duration);
     gain.gain.setValueAtTime(.0001,start);gain.gain.exponentialRampToValueAtTime(volume,start+.012);gain.gain.exponentialRampToValueAtTime(.0001,start+duration);
@@ -41,10 +42,18 @@ class SoundEngine {
   }
   play(kind) {
     if(!this.enabled||!this.context||this.unavailable)return;
-    const now=this.context.currentTime;if(now-(this.last[kind]??-100)<(kind==="rail"?.1:.18))return;this.last[kind]=now;
+    const now=this.context.currentTime;if(now-(this.last[kind]??-100)<(kind==="brake"?1.8:kind==="rail"?.1:.18))return;this.last[kind]=now;
+    if(kind.startsWith("radio-")){
+      if(typeof Audio!=="undefined"&&!Platform.hidden){if(this.radio)this.radio.pause();this.radio=new Audio(`assets/audio/${kind}.wav`);this.radio.volume=.55;this.radio.play().catch(()=>{});}
+      return;
+    }
     if(kind==="rail")this.tone(730,.08,"triangle",.13,0,180);
-    else if(kind==="signal")this.tone(370,.2,"sine",.16,0,920);
-    else if(kind==="missile"||kind==="strike")this.tone(105,.28,"sawtooth",.16,0,28);
+    else if(kind==="signal")[660,440].forEach((f,i)=>this.tone(f,.08,"sine",.1,i*.09));
+    else if(kind==="missile"){this.tone(140,.22,"triangle",.14,0,55);this.tone(850,.06,"square",.04,.1,430);}
+    else if(kind==="strike")this.tone(105,.28,"sawtooth",.16,0,28);
+    else if(kind==="gate")[880,660].forEach((f,i)=>this.tone(f,.11,"sine",.14,i*.13));
+    else if(kind==="brake"){this.tone(1100,.3,"sawtooth",.035,0,230);this.tone(180,.22,"triangle",.1);}
+    else if(kind==="engine")for(let i=0;i<10;i++)this.tone(68+i%3*8,.3,"triangle",.1,i*.2,62);
     else if(kind==="clash")this.tone(210,.08,"square",.07,0,80);
     else if(kind==="build") [262,392].forEach((f,i)=>this.tone(f,.18,"triangle",.2,i*.1));
     else if(kind==="upgrade"||kind==="win")[262,330,392,523].forEach((f,i)=>this.tone(f,.3,"triangle",.2,i*.12));
@@ -58,10 +67,15 @@ class SoundEngine {
     this.tone(frequency, duration, voice, volume, 0, frequency, "music");
   }
   update(game) {
-    const active = this.context && !document.hidden && !(game.screen === "battle" && game.paused) && !game.modal;
+    const active = this.context && !Platform.hidden && !(game.screen === "battle" && game.paused) && !game.modal;
     if (!active) { if (this.wasActive) this.stop(); this.wasActive = false; return; }
     this.wasActive = true;
-    const chapter = game.screen === "menu" ? game.menuChapter : game.level.chapter;
+    if(this.enabled&&typeof Traffic!=="undefined"&&game.traffic&&this.context.currentTime>=(this.nextEngine||0)){
+      const volume=Traffic.engineLevel(game);
+      if(volume>0)this.tone(75,.48,"triangle",volume,0,62);
+      this.nextEngine=this.context.currentTime+.38;
+    }
+    const chapter = game.screen === "menu" || game.screen === "home" ? game.menuChapter : game.level.chapter;
     const theme = CHAPTERS[chapter].theme;
     if (theme !== this.theme) { this.stop("music"); this.theme = theme; this.note = 0; }
     if (!this.musicEnabled || this.context.currentTime < this.nextMusic) return;
@@ -82,4 +96,4 @@ class SoundEngine {
     this.nextMusic = this.context.currentTime + step;
   }
 }
-const Sound = new SoundEngine();
+const Sound = Platform.createSound ? Platform.createSound({config:CONFIG,chapters:CHAPTERS}) : new SoundEngine();

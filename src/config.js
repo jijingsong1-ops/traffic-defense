@@ -2,12 +2,22 @@
 
 // 配置区：经济、难度、敌人、塔型与关卡均为数据驱动。
 const CONFIG = {
-  version: "v0.8.1", width: 1280, height: 820, lives: 20, roadWidth: 34,
+  version: "v0.13.0", width: 1280, height: 820, lives: 20, roadWidth: 34,
   towerRadius: 19, spacing: 56, siteRoadOffset: 48, maxLevel: 4, sellRatio: 0.7,
   towerUpgradeRange: 10, towerFinalRange: 6,
   soldierScale: .64, soldierSpeed: 88, soldierLeash: 76, soldierCatch: 23, audioVolume: .22,
-  levelsPerChapter: 8, firstPreparation: 30, waveReward: 34,
-  enemyGrowth: 1.14, spawnInterval: 0.62, projectileSpeed: 430,
+  levelsPerChapter: 8, firstPreparation: 20,
+  waveGapMin: 5, waveGapMax: 10, waveGapPerEnemy: .25,
+  earlyGoldPerSecond: 3, earlyGoldMax: 30,
+  enemyHealthMultiplier: 1.45, bossHealthMultiplier: 1.95, killRewardMultiplier: .9,
+  extraWaveEnemies: 2,
+  trafficSwitchCooldown: 18, diversionDuration: 8, trafficActionCooldown: 20, tollHold: 2.5,
+  escortProtection: 5, escortCooldown: 14, busDispatchWindow: 12, busStopTime: 4,
+  busRaidWarning: 3, busThreatRadius: 110, busRewardBase: 80, busRewardHealth: .8,
+  emergencyPriority: 8, emergencyCooldown: 18,
+  bridgeRepairCost: 60, bridgeRepairAmount: 30, bridgeRepairCooldown: 18,
+  bridgeDeckLength: 150, bridgeSiegeDuration: 7,
+  enemyGrowth: 1.15, spawnInterval: 0.46, trafficGap: 7, enemyVisualScale: .88, projectileSpeed: 430,
   fixedStep: 1 / 60, saveKey: "traffic-defense-campaign-v1"
 };
 const COLORS = { bg: "#102d34", panel: "#1b3d44", muted: "#a2bbb9", ink: "#f7f2df",

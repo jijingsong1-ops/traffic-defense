@@ -1,0 +1,2 @@
+# Preserve the exact bytes of the frozen WeChat package on every platform.
+wechat/** -text whitespace=cr-at-eol

@@ -1,0 +1,134 @@
+[
+  {
+    "path": "game.bundle.js",
+    "sha256": "e0cf0d172cd87a44edb99291aafa40d02daafae2d11029ad6fc08eaaf50d75dd"
+  },
+  {
+    "path": "game.js",
+    "sha256": "96e4a49fee874ea15ca4f7956d990e888123dc273f4699f9301d87d3ce794147"
+  },
+  {
+    "path": "game.json",
+    "sha256": "6c628b45324a28b9fca3440c35af6784181574ed6b97e4914953a6d83cfc24e6"
+  },
+  {
+    "path": "project.config.json",
+    "sha256": "8f2c1a12353e4cc3fa8d1e683ef6236e119c22132a15a24552ba3e88b2bbc4bd"
+  },
+  {
+    "path": "audio/brake.wav",
+    "sha256": "d5592453d357f1efc63fe742d39e9bdb8f697ae10632f660d8a49df4ca6afa48"
+  },
+  {
+    "path": "audio/build.wav",
+    "sha256": "54b459cf60240d7a2b317e9a28caa95427c13cd3de3998153512f207e9ace541"
+  },
+  {
+    "path": "audio/clash.wav",
+    "sha256": "166208488fd5ea658c7f2eef3c956ad2be2693c747c9bb9a5c59aa6106dac0ec"
+  },
+  {
+    "path": "audio/engine.wav",
+    "sha256": "6b82cbd37d9c9f1c5b7ecb34d46248249f0c2023cc128c6e9f4023f062344e6f"
+  },
+  {
+    "path": "audio/freeze.wav",
+    "sha256": "68033c051f7077992ee797dceb6648f76dce7404354e4311da6d9bb5986348b6"
+  },
+  {
+    "path": "audio/gate.wav",
+    "sha256": "f0538d29bdd613e9d7142cd988990a85e59f285a67c9b60f93f2897b55a02d58"
+  },
+  {
+    "path": "audio/leak.wav",
+    "sha256": "d93713e5212e7490320d1fd550652292a4ae80fce67f58433d2cf2c830795f0d"
+  },
+  {
+    "path": "audio/lose.wav",
+    "sha256": "d93713e5212e7490320d1fd550652292a4ae80fce67f58433d2cf2c830795f0d"
+  },
+  {
+    "path": "audio/missile.wav",
+    "sha256": "e8726d18435a1b0325fc24b7b8e0127a7c5d0f3071446988119d45c467f1f387"
+  },
+  {
+    "path": "audio/music-city.wav",
+    "sha256": "5c707a2bd2e3c53b2ad283dede8cdf4fac9ff1ba76c329e96b97fb754e763667"
+  },
+  {
+    "path": "audio/music-country.wav",
+    "sha256": "521d5b40b6fec208170b88d0ce171457d5e07d84661c208411808efb5ab7351e"
+  },
+  {
+    "path": "audio/music-desert.wav",
+    "sha256": "5b3c1d1eb72c9f8283b82f76243da8e8557252a4048da00be5784298a61e8943"
+  },
+  {
+    "path": "audio/music-forest.wav",
+    "sha256": "6a68744b22be74556036aa7cca7274199a971c451f8b43b9a5b9f23926a0ebb7"
+  },
+  {
+    "path": "audio/music-hills.wav",
+    "sha256": "7a6f96b514eec044e081bdcb11a4f57c4e092d48c33ce01a2798b27fb33d7b83"
+  },
+  {
+    "path": "audio/music-sea.wav",
+    "sha256": "e52e3c2cdea404f763dd4c631e2d579b9e4241fcd3edb1ee94414076f1c67e60"
+  },
+  {
+    "path": "audio/radio-bridge.wav",
+    "sha256": "0e1c5aab7dc853bbe27ccca3426876bb43a89280f7a8c57c23c8818c8ad2edbd"
+  },
+  {
+    "path": "audio/radio-bus.wav",
+    "sha256": "f529baaf00db97e91b6a35c205240bd449a35d75a852bb8a647cbf08b3aef698"
+  },
+  {
+    "path": "audio/radio-construction.wav",
+    "sha256": "36d644e28a823786de20157dc2d6352d98089d81479d9261795b82596d746833"
+  },
+  {
+    "path": "audio/radio-emergency.wav",
+    "sha256": "7f908e5c0b197a230cbb81429c54fbb21a096d16f36d70f94b643325c86292b8"
+  },
+  {
+    "path": "audio/radio-tidal.wav",
+    "sha256": "c7875c210f8b01674876c028579047f860f30d270af51c40a8e0d14264315324"
+  },
+  {
+    "path": "audio/radio-tunnel.wav",
+    "sha256": "372d233f5a7484376e67d4978c01baeaf54e8af0f293697a175c2bd25defad21"
+  },
+  {
+    "path": "audio/rail.wav",
+    "sha256": "a8623aa3d4c6106052cd0fae98d34ee4bb300b4ba4ef8d5ff50e3c8ded39edb0"
+  },
+  {
+    "path": "audio/signal.wav",
+    "sha256": "aecfdc5ed3fe1e576f17fdbe6d1e915a101dbcc2dd00fd8c1e5794cbc92d9c88"
+  },
+  {
+    "path": "audio/strike.wav",
+    "sha256": "f4b2dcba253a6a74cc503ad14565e1b4d9e3016130666f2b944fd88fdc0a485d"
+  },
+  {
+    "path": "audio/upgrade.wav",
+    "sha256": "c60ef3c18c953f0fdccc3d89e3a4ba3462fd1a5b99416aafc3c9afdfde466ec4"
+  },
+  {
+    "path": "audio/wave.wav",
+    "sha256": "a1014f2b1d56fbdae3dc57e507d94ea6462b1ecde6636d565d6928ed3835fa5e"
+  },
+  {
+    "path": "audio/win.wav",
+    "sha256": "c60ef3c18c953f0fdccc3d89e3a4ba3462fd1a5b99416aafc3c9afdfde466ec4"
+  },
+  {
+    "path": "platform/audio.js",
+    "sha256": "c86ef8c295ba1544f39ee6faaa5b62002f685fe4f770b9a9bb2b1c85c87e89ed"
+  },
+  {
+    "path": "platform/wechat.js",
+    "sha256": "a48811bf3ea01dec76340deace97b91e154dc6cbf4d6b2b157fb5d73127538c8"
+  }
+]

@@ -1,10 +1,16 @@
 "use strict";
 
 class Enemy {
+  static bodyLength(spec) {
+    const visual=spec.visual||Object.keys(ENEMIES).find(key=>ENEMIES[key]===spec);
+    return (spec.boss?54:visual==="runner"||visual==="swarm"?23:visual==="splitter"?37:32)*CONFIG.enemyVisualScale;
+  }
+  get bodyLength() { return this.length; }
   constructor(type, path, scale = 1) {
     this.type = type; this.spec = ENEMIES[type]; this.path = path; this.scale = scale;
+    this.length=Enemy.bodyLength(this.spec);
     this.segment = 0; this.x = path[0].x; this.y = path[0].y;
-    this.maxHealth = this.spec.hp * scale; this.health = this.maxHealth;
+    this.maxHealth = this.spec.hp * scale * (this.spec.boss?CONFIG.bossHealthMultiplier:CONFIG.enemyHealthMultiplier); this.health = this.maxHealth;
     this.maxShield = (this.spec.shield || 0) * scale; this.shield = this.maxShield;
     this.slowTime = 0; this.slowFactor = 1; this.stunTime = 0;
     this.burnTime = 0; this.burnDamage = 0; this.sinceHit = 0; this.healTimer = 1.2;
@@ -31,14 +37,55 @@ class Enemy {
     this.health -= damage * (options.pierce ? 1 : 1 - (Math.max(0,(this.spec.armor || 0)-(this.shredTime>0?this.shredAmount:0))));
     if (this.health <= 0) {
       if(this.blocker)this.blocker.release();
-      this.dead = true; game.gold += this.spec.reward; game.kills++;
-      game.effect(this, this.spec.color, 25); game.float(this, `+${this.spec.reward}`, COLORS.gold);
+      const reward=Math.max(1,Math.round(this.spec.reward*CONFIG.killRewardMultiplier));
+      this.dead = true; game.gold += reward; game.kills++;
+      game.effect(this, this.spec.color, 25); game.float(this, `+${reward}`, COLORS.gold);
       if (this.spec.split) for (let i = 0; i < this.spec.split; i++) {
         const child = new Enemy(this.spec.splitType || "swarm", this.path, this.scale);
-        child.x = this.x; child.y = this.y; child.segment = this.segment; child.stunTime = i * 0.14;
+        child.x = this.x; child.y = this.y; child.segment = this.segment;child.angle=this.angle;
+        // 子车沿已走过的道路依次排开，避免同一坐标一次堆出多个图形。
+        child.moveBack((i+1)*(child.bodyLength+CONFIG.trafficGap));
         game.enemies.push(child);
       }
     }
+  }
+  moveBack(distance) {
+    while(distance>0){
+      const target=this.path[this.segment],remaining=Collision.distance(this,target);
+      if(remaining>=distance&&remaining>0){
+        this.x+=(target.x-this.x)*distance/remaining;this.y+=(target.y-this.y)*distance/remaining;return;
+      }
+      this.x=target.x;this.y=target.y;distance-=remaining;
+      if(this.segment===0){
+        const next=this.path[1],length=Collision.distance(target,next);
+        this.x-=(next.x-target.x)*distance/length;this.y-=(next.y-target.y)*distance/length;return;
+      }
+      this.segment--;
+    }
+  }
+  followingDistance(game,distance) {
+    const from=this.path[this.segment],to=this.path[this.segment+1];
+    if(!to)return distance;
+    const dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy);
+    let ownRemaining;this.passOffset=0;
+    for(const other of game.enemies){
+      if(other===this||other.dead||Collision.distance(this,other)>90)continue;
+      let ahead;
+      if(other.path===this.path){
+        ownRemaining??=this.remaining;ahead=ownRemaining-other.remaining;
+      }else{
+        // 分流/合流的共用直线路段同样保持车距；不同支路互不阻挡。
+        const a=other.path[other.segment],b=other.path[other.segment+1];
+        if(!b||dx*(b.x-a.x)+dy*(b.y-a.y)<=0||Math.abs(dx*(b.y-a.y)-dy*(b.x-a.x))>.01||Collision.segmentDistance(other,from,to)>1)continue;
+        ahead=((other.x-this.x)*dx+(other.y-this.y)*dy)/length;
+      }
+      if(ahead>0){
+        // 勤务队员只能拦住自己的目标，后车可从路肩绕过，不能一人锁死整波车队。
+        if(other.blocker||other.stunTime>0){if(ahead<65)this.passOffset=10;continue;}
+        distance=Math.min(distance,Math.max(0,ahead-(this.bodyLength+other.bodyLength)/2-CONFIG.trafficGap));
+      }
+    }
+    return distance;
   }
   update(dt, game) {
     this.sinceHit += dt;
@@ -74,7 +121,8 @@ class Enemy {
       return;
     }
     this.blocker=null;
-    let distance = stunned ? 0 : this.spec.speed * factor * dt;
+    const roadFactor=Traffic.enemyMotion(game,this,Traffic.speed(game,this),stunned?0:dt);
+    let distance = stunned ? 0 : this.followingDistance(game,this.spec.speed * factor * roadFactor * dt);
     while (distance > 0 && !this.dead) {
       const target = this.path[this.segment + 1];
       if (!target) { this.escape(game); break; }
@@ -90,6 +138,7 @@ class Enemy {
   }
   escape(game) {
     Sound.play("leak");
+    Traffic.onEscape(game,this);
     this.dead = true; game.lives = Math.max(0, game.lives - this.spec.leak);
     game.effect(this, COLORS.red, 32); game.float(this, `-${this.spec.leak} ♥`, COLORS.red);
   }

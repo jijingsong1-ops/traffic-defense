@@ -57,6 +57,7 @@ Object.assign(Renderer, {
         this.box(-10, gy - 7, 23, 14, shell, ink, 5);
         this.box(-6, gy - 4, 13, 8, glass, null, 3);
         this.box(4, gy - 5, length, 4, shade, ink, 1);
+        this.box(-4,gy-11,15,4,"#536f75",null,2);
         this.box(4, gy + 1, length, 4, shade, ink, 1);
         this.line([[8, gy], [length + 5, gy]], accent, 2);
         this.box(length - 1, gy - 7, 7, 14, glass, ink, 2);
@@ -83,7 +84,9 @@ Object.assign(Renderer, {
         this.line([[x, y + 1], [x + size * .3, y - size * .6]], accent, 2);
         this.circle(x + size * .3, y - size * .6, 3, "#e3ffff");
       };
-      antenna(0, -height-firing*(advanced?5:2), level === 1 ? 13 : 20);
+      this.box(-10,-height-17,20,39,glass,ink,6);
+      for(let i=0;i<3;i++)this.circle(0,-height-10+i*12,4.5,i===(firing>0?0:2)?["#ef8c65","#efcf79","#9cdaad"][i]:"#5b6f66");
+      if(advanced&&branch===0){this.box(-25,-height-14,13,30,glass,ink,3);this.text("30",-18,-height,9,"#f6de94","bold","center");}
       if(firing>0)this.oval(0,-height,22+firing*8,8+firing*4,"#ffffff12",accent);
       if (advanced && branch === 1) {
         this.line([[-18, -5], [-18, -24], [18, -24], [18, -5]], shade, 4);
@@ -94,33 +97,20 @@ Object.assign(Renderer, {
         this.circle(-22, -4, 3, "#d5f4ff"); this.circle(22, -4, 3, "#d5f4ff");
       }
     } else if (tower.type === "missile") {
-      ctx.save();ctx.translate(0,firing*(advanced?4:2));
-      this.box(-20, -22, 40, 31, shade, ink, 8);
-      this.box(-20, -27, 40, 28, shell, ink, 8);
-      this.box(-15, -23, 30, 19, glass, null, 5);
-      if (advanced && branch === 0) {
-        this.box(-10, -39, 20, 35, shade, ink, 5);
-        this.oval(0, -39, 10, 5, shell, ink);
-        this.box(-5, -47, 10, 27, accent, ink, 4);
-        this.polygon([[-5, -44], [0, -55], [5, -44]], "#f4f5e7", ink);
-        this.box(-5, -30, 10, 5, "#fcf3d7", null, 1);
-        this.line([[-11, -18], [-18, -28]], shade, 4);
-      } else {
-        const rows = level === 1 ? 1 : advanced ? 3 : 2;
-        for (let row = 0; row < rows; row++) for (const x of [-8, 8]) {
-          const y = -24 + row * 8;
-          this.oval(x, y, 6, 4, "#172f3d", shade);
-          this.oval(x, y - 1, 3, 2, accent);
-        }
-        if (advanced) {
-          this.box(-25, -29, 7, 30, shade, ink, 3);
-          this.box(18, -29, 7, 30, shade, ink, 3);
-        }
+      // 清障绞盘：卷索轮、伸缩吊臂、警示支腿；两条进化分别为重锚与双网。
+      this.box(-21,-17,42,29,"#d9b068",ink,5);
+      for(const x of [-28,18]){this.box(x,2,10,13,shade,ink,2);this.line([[x,8],[x+9,8]],"#f8cf7a",3);}
+      this.circle(-8,-9,10,glass);this.circle(-8,-9,6,shade);this.circle(-8,-9,2,"#e7d6a5");
+      const height=advanced&&branch===0?51:level>=2?38:28;
+      const boomX=advanced&&branch===1?[-14,14]:[5];
+      for(const x of boomX){
+        this.line([[x,0],[x-8,-height],[x+19,-height+7]],ink,9);
+        this.line([[x,0],[x-8,-height],[x+19,-height+7]],"#e6b95f",5);
+        this.line([[x+19,-height+7],[x+19,-height+22+firing*6]],"#4e686d",1.5);
+        this.line([[x+15,-height+20+firing*6],[x+19,-height+25+firing*6],[x+23,-height+20+firing*6]],accent,3);
       }
-      for (const x of [-14, -5, 4, 13]) this.line([[x, 3], [x + 4, 7]], "#f5c579", 3);
-      if (level === 4) this.box(12, -39, 9, 7, glass, accent, 2);
-      if(firing>.4){this.oval(0,-20,advanced?19:10,7,"#ffe0a480");this.line([[-16,10],[-23,15]],accent,2);this.line([[16,10],[23,15]],accent,2);}
-      ctx.restore();
+      for(const x of [-15,-4,7])this.line([[x,7],[x+6,12]],ink,3);
+      if(level===4){this.box(-23,-27,10,15,glass,accent,3);this.circle(-18,-30,3,"#f4d476");}
     } else if (tower.type === "depot") {
       const height = level === 1 ? 21 : level === 2 ? 28 : 35;
       this.box(-22, -height + 6, 44, height + 5, shade, ink, 7);
@@ -132,6 +122,9 @@ Object.assign(Renderer, {
       this.line([[-13, -10], [13, -10]], "#65818c", 2);
       this.line([[-13, -5], [13, -5]], "#65818c", 2);
       this.box(-23, -height - 3, 46, 10, shade, ink, 5);
+      this.box(-13,-height-9,26,6,glass,ink,2);
+      this.box(-11,-height-8,9,4,"#db7d63",null,1);this.box(2,-height-8,9,4,"#6bbdc8",null,1);
+      this.text("巡",0,-height+14,11,ink,"bold","center");
       this.box(-19, -height - 3, 38, 5, shell, null, 3);
       this.box(-10, -height + 10, 20, 7, firing>0?"#fff4cd":accent, null, 3);
       this.line([[-4, -height + 13], [4, -height + 13]], "#fff4e4", 2);
