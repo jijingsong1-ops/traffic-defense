@@ -39,9 +39,9 @@ const ROAD_LAYOUTS = {
     {label:"升桥回环", paths:["52,310 230,310 230,530 670,530 790,390 894,390"], alternate:"52,310 230,310 390,220 720,220 720,390 540,390 540,560 810,560 894,390", event:"升桥绕行"}
   ],
   country: [
-    {label:"麦田大回环", paths:["52,270 720,270 790,440 630,560 240,560 240,410 570,410"]},
+    {label:"麦田大回环", paths:["52,285 720,285 790,440 630,560 240,560 240,410 570,410"]},
     {label:"牧场三岔", paths:["52,390 190,390 330,220 670,220 780,390 894,390", "52,390 190,390 430,390 780,390 894,390", "52,390 190,390 330,560 670,560 780,390 894,390"]},
-    {label:"风车折线", paths:["52,570 200,570 320,230 460,530 600,230 740,530 894,350"]},
+    {label:"风车双翼", paths:["52,225 220,225 330,325 610,325 740,225 894,225", "52,575 230,575 350,475 620,475 750,575 894,575"]},
     {label:"水渠漫堤", paths:["52,390 210,390 330,240 650,240 790,390 894,390"], alternate:"52,390 210,390 330,560 550,560 550,390 760,390 760,240 894,240", event:"开闸引流"},
     {label:"南北夹击", paths:["250,185 250,330 430,330 600,390 790,390 894,390", "250,630 250,490 430,490 600,390 790,390 894,390"]},
     {label:"稻田田字", paths:["52,230 380,230 380,400 190,400 190,570 710,570 710,230 894,230"]},
@@ -61,7 +61,7 @@ const ROAD_LAYOUTS = {
   hills: [
     {label:"盘山三折", paths:["52,560 790,560 790,390 230,390 230,220 780,220 894,330"]},
     {label:"双峰山口", paths:["52,390 180,390 360,220 500,390 670,220 810,390 894,390", "52,390 180,390 350,560 640,560 810,390 894,390"]},
-    {label:"矿坑回旋", paths:["52,240 740,240 740,550 260,550 260,390 560,390"]},
+    {label:"矿口三线", paths:["52,215 250,215 440,325 650,325 810,250 894,250", "52,570 230,570 440,475 650,325 810,250 894,250", "440,185 440,325 650,325 810,250 894,250"]},
     {label:"落石换道", paths:["52,330 210,330 370,220 650,220 800,440 894,440"], alternate:"52,330 210,330 210,570 650,570 650,390 420,390 420,240 894,240", event:"落石封山"},
     {label:"高低双线", paths:["52,220 230,220 370,320 680,320 800,220 894,220", "52,580 190,580 380,450 730,450 850,560 894,560"]},
     {label:"四折天梯", paths:["170,630 170,220 370,220 370,550 570,550 570,250 770,250 770,490 894,490"]},
@@ -81,7 +81,7 @@ const ROAD_LAYOUTS = {
   forest: [
     {label:"林间双环", paths:["52,230 230,230 230,540 470,540 470,230 720,230 720,540 894,390"]},
     {label:"林间调度口", paths:["52,390 230,390 310,220 570,220 690,310 790,390 894,390", "52,390 230,390 360,470 570,570 720,530 790,390 894,390", "52,390 230,390 470,390 790,390 894,390"]},
-    {label:"溪谷回头", paths:["52,570 770,570 770,230 230,230 230,400 590,400"]},
+    {label:"溪谷两岸", paths:["52,235 260,235 390,330 640,330 780,220 894,220", "52,570 230,570 400,465 660,465 790,570 894,570"]},
     {label:"倒木横路", paths:["52,390 210,390 340,230 710,230 800,420 894,420"], alternate:"52,390 210,390 310,570 560,570 560,400 780,400 780,230 894,230", event:"古树倒伏"},
     {label:"藤蔓双蛇", paths:["52,240 220,240 340,340 520,250 700,340 810,240 894,340", "52,560 200,560 340,470 530,560 700,460 810,560 894,460"]},
     {label:"萤火南北", paths:["230,185 230,320 400,320 560,390 740,390 894,300", "710,630 710,540 410,540 410,460 560,390 740,390 894,300"]},
@@ -96,15 +96,16 @@ function createRoutes(theme, stage) {
 const LEVELS = CHAPTERS.flatMap((chapter, chapterIndex) => chapter.names.map((name,n) => {
   const stage=n+1,index=chapterIndex*CONFIG.levelsPerChapter+n;
   const layout=ROAD_LAYOUTS[chapter.theme][n];
+  const routes=createRoutes(chapter.theme,stage),fronts=new Set(routes.map(route=>route.at(-1).join(","))).size;
   const eventKind=[ ["construction","bridge"],["tidal","bridge"],["construction","tidal"],["tunnel","tunnel"],["tidal","bridge"],["tunnel","construction"] ][chapterIndex][stage===4?0:1];
   const eventName={construction:"高架施工改道",tunnel:"隧道封闭绕行",tidal:"潮汐车道切换",bridge:"吊桥开启绕行"}[eventKind];
 
   return { id:`${chapter.theme}-${stage}`,name,chapter:chapterIndex,stage,theme:chapter.theme,mapNode:chapter.nodes[n],
     subtitle:`${chapter.name} / ${stage%4===0?"首领攻势":"定时进攻"}`,district:chapter.city.split(" / ")[1],
-    waves:6+Math.floor(n/3)+Math.min(chapterIndex,2),gold:350+chapterIndex*105+n*28,
+    waves:6+Math.floor(n/3)+Math.min(chapterIndex,2),gold:350+chapterIndex*105+n*28+(fronts-1)*CONFIG.splitFrontGold,
     scale:1.12+chapterIndex*.26+n*.045,enemyExtra:Math.floor(chapterIndex*.8+n*.4),
     boss:stage%4===0,bossType:chapter.boss,
-    pool:chapter.pool,color:chapter.land,routes:createRoutes(chapter.theme,stage),layout:layout.label,
+    pool:chapter.pool,color:chapter.land,routes,layout:layout.label,
     mission:["toll","bus","emergency","bridge"][n%4],
     routeEvent:layout.alternate?{wave:stage===4?4:5,name:eventName,kind:eventKind,routes:[readRoute(layout.alternate)]}:null,
     reward:stage===8?"完成本章，开启新的地貌进化":"获取星级，推进防御塔进化研究" };

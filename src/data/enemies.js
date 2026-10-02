@@ -44,3 +44,13 @@ Object.assign(ENEMIES, {
   brood: { ...ENEMIES.splitter, name:"荆棘母巢", hp:165, split:4, splitType:"spore", reward:28, skin:"forest", visual:"splitter", color:"#b2aa7d", note:"死亡释放4只孢子兽，终点前要保留范围火力。" },
   ancient: { ...ENEMIES.boss, name:"古树行者", hp:1550, heal:18, split:6, splitType:"spore", skin:"forest", visual:"boss", color:"#9fa46f", note:"治疗同伴，死亡时释放6只孢子兽。" }
 });
+
+// 魔抗仅减免魔法伤害；护甲仅减免物理伤害。与护盾、抗火、抗控分开结算。
+for(const [key,resist] of Object.entries({shield:.2,mirage:.45,barge:.35,tender:.25,grove:.3,ancient:.25,sandBoss:.2,admiral:.3}))ENEMIES[key].magicResist=resist;
+Object.assign(ENEMIES,{
+  insulated:{name:"绝缘货车",hp:145,speed:45,reward:27,leak:2,armor:.05,magicResist:.65,color:"#bb9f65",visual:"shield",note:"高魔抗，物理防护薄弱。"},
+  relay:{name:"解控指挥车",hp:120,speed:42,reward:30,leak:2,armor:.1,magicResist:.15,cleanse:7,abilityRadius:100,color:"#729883",visual:"healer",note:"每7秒解除附近友军减速与冻结，随后短暂免控。"},
+  jammer:{name:"干扰车",hp:125,speed:40,reward:32,leak:2,armor:.1,magicResist:.3,towerJam:8,abilityRadius:115,jamDuration:2.4,color:"#927cac",visual:"healer",note:"预警后封锁附近一座塔2.4秒，间隔8秒。"},
+  bulldozer:{name:"破障推土车",hp:195,speed:39,reward:31,leak:3,armor:.3,magicResist:.1,controlImmune:true,color:"#c99b62",visual:"armor",note:"免疫减速与冻结，仍可被勤务队员拦截。"}
+});
+const CHAPTER_THREATS=[['insulated','jammer'],['relay','insulated'],['insulated','bulldozer'],['bulldozer','jammer'],['jammer','relay'],['relay','bulldozer']];

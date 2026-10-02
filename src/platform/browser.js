@@ -69,7 +69,8 @@ const Platform = {
       if(key==="f"){event.preventDefault();this.toggleFullscreen();return;}
       if(key==="m"){Sound.toggle("music");return;}
       if(key==="escape"){
-        if(game.modal==="newCampaign")game.modal="saveSlots";
+        if(game.modal==="codex")game.modal=game.codexReturn;
+        else if(game.modal==="newCampaign")game.modal="saveSlots";
         else if(["loadout","intel"].includes(game.modal)&&game.screen==="menu")game.modal="level";
         else if(game.modal)game.modal=null;
         else if(game.screen==="battle"&&!game.selected&&!game.selectedSite&&!game.skill&&!game.rallyTower&&!game.traffic?.routeMenu)game.modal="battleMenu";
@@ -77,8 +78,8 @@ const Platform = {
       }
       if(game.screen!=="battle"||game.modal)return;
       if(key===" "){event.preventDefault();game.paused=!game.paused;}
-      if(key==="q")game.selectSkill("strike");
-      if(key==="e")game.selectSkill("freeze");
+      if(key==="q")game.selectSkill(game.skillLoadout[0]);
+      if(key==="e")game.selectSkill(game.skillLoadout[1]);
       if(/^[1-4]$/.test(key))game.selectBuild(game.loadout[Number(key)-1]);
     });
     const suspend=()=>{reset();game.lastTime=null;game.accumulator=0;if(game.screen==="battle")game.paused=true;Sound.stop();};

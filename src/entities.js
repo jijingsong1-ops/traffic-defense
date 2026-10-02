@@ -6,7 +6,7 @@ class Enemy {
     return (spec.boss?54:visual==="runner"||visual==="swarm"?23:visual==="splitter"?37:32)*CONFIG.enemyVisualScale;
   }
   get bodyLength() { return this.length; }
-  constructor(type, path, scale = 1) {
+  constructor(type, path, scale = 1, formation = null) {
     this.type = type; this.spec = ENEMIES[type]; this.path = path; this.scale = scale;
     this.length=Enemy.bodyLength(this.spec);
     this.segment = 0; this.x = path[0].x; this.y = path[0].y;
@@ -15,18 +15,23 @@ class Enemy {
     this.slowTime = 0; this.slowFactor = 1; this.stunTime = 0;
     this.burnTime = 0; this.burnDamage = 0; this.sinceHit = 0; this.healTimer = 1.2;
     this.dead = false; this.angle = 0; this.shredTime=0; this.shredAmount=0; this.jamTime=0;
+    this.silenceTime=0;this.healBlockTime=0;this.controlWardTime=0;
+    this.abilityTimer=this.spec.cleanse||this.spec.towerJam||0;
+    this.lane=formation?.lane??null;this.laneSpan=formation?.span||(this.spec.boss?2:1);
+    if(this.lane!==null){this.center={...path[0]};Lanes.sync(this);}
   }
   get remaining() {
-    let distance = Collision.distance(this, this.path[this.segment + 1] || this);
+    let distance = Collision.distance(this.center||this, this.path[this.segment + 1] || this.center||this);
     for (let i = this.segment + 1; i < this.path.length - 1; i++) distance += Collision.distance(this.path[i], this.path[i + 1]);
     return distance;
   }
   slow(factor, duration) {
+    if(this.spec.controlImmune||this.controlWardTime>0)return;
     const effective = 1 - (1 - factor) * (1 - (this.spec.slowResist || 0));
     this.slowFactor = this.slowTime > 0 ? Math.min(this.slowFactor, effective) : effective;
     this.slowTime = Math.max(this.slowTime, duration);
   }
-  stun(duration) { this.stunTime = Math.max(this.stunTime, duration * (1 - (this.spec.slowResist || 0))); }
+  stun(duration) { if(!this.spec.controlImmune&&this.controlWardTime<=0)this.stunTime = Math.max(this.stunTime, duration * (1 - (this.spec.slowResist || 0))); }
   hit(damage, game, options = {}) {
     if (this.dead) return;
     this.sinceHit = 0;
@@ -34,34 +39,41 @@ class Enemy {
     const absorbed = Math.min(this.shield, damage * multiplier);
     this.shield -= absorbed;
     damage = Math.max(0, damage - absorbed / multiplier);
-    this.health -= damage * (options.pierce ? 1 : 1 - (Math.max(0,(this.spec.armor || 0)-(this.shredTime>0?this.shredAmount:0))));
+    this.health -= damage * (1-CombatRules.resistance(this,options));
     if (this.health <= 0) {
       if(this.blocker)this.blocker.release();
       const reward=Math.max(1,Math.round(this.spec.reward*CONFIG.killRewardMultiplier));
       this.dead = true; game.gold += reward; game.kills++;
       game.effect(this, this.spec.color, 25); game.float(this, `+${reward}`, COLORS.gold);
       if (this.spec.split) for (let i = 0; i < this.spec.split; i++) {
-        const child = new Enemy(this.spec.splitType || "swarm", this.path, this.scale);
+        const child = new Enemy(this.spec.splitType || "swarm", this.path, this.scale,this.lane===null?null:{lane:this.lane,span:1});
         child.x = this.x; child.y = this.y; child.segment = this.segment;child.angle=this.angle;
+        if(this.center)child.center={...this.center};
         // 子车沿已走过的道路依次排开，避免同一坐标一次堆出多个图形。
         child.moveBack((i+1)*(child.bodyLength+CONFIG.trafficGap));
+        if(child.lane!==null)for(let n=0;n<=game.enemies.length;n++){
+          const occupied=game.enemies.some(e=>!e.dead&&Lanes.overlap(child,e)&&Collision.distance(child,e)<(child.bodyLength+e.bodyLength)/2+CONFIG.trafficGap);
+          if(!occupied)break;child.moveBack(child.bodyLength+CONFIG.trafficGap);
+        }
         game.enemies.push(child);
       }
     }
   }
   moveBack(distance) {
+    const position=this.center||this;
     while(distance>0){
-      const target=this.path[this.segment],remaining=Collision.distance(this,target);
+      const target=this.path[this.segment],remaining=Collision.distance(position,target);
       if(remaining>=distance&&remaining>0){
-        this.x+=(target.x-this.x)*distance/remaining;this.y+=(target.y-this.y)*distance/remaining;return;
+        position.x+=(target.x-position.x)*distance/remaining;position.y+=(target.y-position.y)*distance/remaining;Lanes.sync(this);return;
       }
-      this.x=target.x;this.y=target.y;distance-=remaining;
+      position.x=target.x;position.y=target.y;distance-=remaining;
       if(this.segment===0){
         const next=this.path[1],length=Collision.distance(target,next);
-        this.x-=(next.x-target.x)*distance/length;this.y-=(next.y-target.y)*distance/length;return;
+        position.x-=(next.x-target.x)*distance/length;position.y-=(next.y-target.y)*distance/length;Lanes.sync(this);return;
       }
       this.segment--;
     }
+    Lanes.sync(this);
   }
   followingDistance(game,distance) {
     const from=this.path[this.segment],to=this.path[this.segment+1];
@@ -69,19 +81,28 @@ class Enemy {
     const dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy);
     let ownRemaining;this.passOffset=0;
     for(const other of game.enemies){
-      if(other===this||other.dead||Collision.distance(this,other)>90)continue;
+      if(other===this||other.dead||!Lanes.overlap(this,other)||Collision.distance(this,other)>110)continue;
       let ahead;
       if(other.path===this.path){
         ownRemaining??=this.remaining;ahead=ownRemaining-other.remaining;
       }else{
         // 分流/合流的共用直线路段同样保持车距；不同支路互不阻挡。
         const a=other.path[other.segment],b=other.path[other.segment+1];
-        if(!b||dx*(b.x-a.x)+dy*(b.y-a.y)<=0||Math.abs(dx*(b.y-a.y)-dy*(b.x-a.x))>.01||Collision.segmentDistance(other,from,to)>1)continue;
-        ahead=((other.x-this.x)*dx+(other.y-this.y)*dy)/length;
+        const p=other.center||other,own=this.center||this;
+        const aligned=b&&dx*(b.x-a.x)+dy*(b.y-a.y)>0&&Math.abs(dx*(b.y-a.y)-dy*(b.x-a.x))<.01&&Collision.segmentDistance(p,from,to)<=1;
+        if(aligned)ahead=((p.x-own.x)*dx+(p.y-own.y)*dy)/length;
+        else {
+          // 合流前检查共用的下一段；先通过路口的同车道车辆优先。
+          const next=this.path[this.segment+2];
+          if(!next||!b||Collision.distance(a,to)>.01||Collision.distance(b,next)>.01)continue;
+          ahead=Collision.distance(own,to)+Collision.distance(to,p);
+        }
       }
       if(ahead>0){
-        // 勤务队员只能拦住自己的目标，后车可从路肩绕过，不能一人锁死整波车队。
-        if(other.blocker||other.stunTime>0){if(ahead<65)this.passOffset=10;continue;}
+        // 旧的居中任务车保留绕行；四车道编队只在自身车道排队，邻道仍可通行。
+        if(this.lane===null&&(other.blocker||other.stunTime>0)){if(ahead<65)this.passOffset=10;continue;}
+        // 弯道内侧会压缩实际车距，不能只用中心线的里程差判断空位。
+        if(this.lane!==null)ahead=Math.min(ahead,Collision.distance(this,other));
         distance=Math.min(distance,Math.max(0,ahead-(this.bodyLength+other.bodyLength)/2-CONFIG.trafficGap));
       }
     }
@@ -90,18 +111,21 @@ class Enemy {
   update(dt, game) {
     this.sinceHit += dt;
     this.shredTime=Math.max(0,this.shredTime-dt);this.jamTime=Math.max(0,this.jamTime-dt);
+    for(const key of ["silenceTime","healBlockTime","controlWardTime"])this[key]=Math.max(0,this[key]-dt);
     if (this.burnTime > 0) {
-      this.hit(this.burnDamage * Math.min(dt, this.burnTime) * (1-(this.spec.burnResist||0)), game, { pierce: true });
+      this.hit(this.burnDamage * Math.min(dt, this.burnTime) * (1-(this.spec.burnResist||0)), game, { damageType:"magic" });
       this.burnTime = Math.max(0, this.burnTime - dt);
+      if (!this.burnTime) this.burnDamage = 0;
       if (this.dead) return;
     }
-    if (this.sinceHit > 3 && this.maxShield && this.jamTime === 0) this.shield = Math.min(this.maxShield, this.shield + this.spec.regen * dt);
-    if (this.spec.heal) {
+    if (this.sinceHit > 3 && this.maxShield && this.jamTime === 0 && this.silenceTime===0) this.shield = Math.min(this.maxShield, this.shield + this.spec.regen * dt);
+    CombatRules.enemyAbility(this,dt,game);
+    if (this.spec.heal&&this.stunTime<=0&&this.silenceTime<=0) {
       this.healTimer -= dt;
       if (this.healTimer <= 0) {
         this.healTimer = 1.2;
         let healed = false;
-        for (const other of game.enemies) if (other !== this && !other.dead && other.health < other.maxHealth && Collision.distance(this, other) < 85) {
+        for (const other of game.enemies) if (other !== this && !other.dead && other.healBlockTime<=0 && other.health < other.maxHealth && Collision.distance(this, other) < 85) {
           other.health = Math.min(other.maxHealth, other.health + this.spec.heal * this.scale); healed = true;
         }
         if (healed) game.effect(this, "#7ee6b3", 85);
@@ -123,18 +147,20 @@ class Enemy {
     this.blocker=null;
     const roadFactor=Traffic.enemyMotion(game,this,Traffic.speed(game,this),stunned?0:dt);
     let distance = stunned ? 0 : this.followingDistance(game,this.spec.speed * factor * roadFactor * dt);
+    const position=this.center||this;
     while (distance > 0 && !this.dead) {
       const target = this.path[this.segment + 1];
       if (!target) { this.escape(game); break; }
-      const remaining = Collision.distance(this, target);
-      this.angle = Math.atan2(target.y - this.y, target.x - this.x);
+      const remaining = Collision.distance(position, target);
+      this.angle = Math.atan2(target.y - position.y, target.x - position.x);
       if (distance >= remaining) {
-        this.x = target.x; this.y = target.y; distance -= remaining; this.segment++;
+        position.x = target.x; position.y = target.y; distance -= remaining; this.segment++;
         if (this.segment === this.path.length - 1) this.escape(game);
       } else {
-        this.x += Math.cos(this.angle) * distance; this.y += Math.sin(this.angle) * distance; distance = 0;
+        position.x += Math.cos(this.angle) * distance; position.y += Math.sin(this.angle) * distance; distance = 0;
       }
     }
+    Lanes.sync(this);
   }
   escape(game) {
     Sound.play("leak");
@@ -150,16 +176,17 @@ class Tower {
     this.type = type; this.x = x; this.y = y; this.level = 1; this.branch = null;
     this.fireTime = 0; this.cooldown = 0; this.angle = -Math.PI / 2; this.invested = TOWERS[type].cost;
     this.targetMode = 0; this.focusTarget = null; this.focusStacks = 0;
+    this.jammedTime=0;this.jamGuardTime=0;this.hasteTime=0;this.hastePower=0;
   }
   get spec() { return TOWERS[this.type]; }
   get paths() { return pathsFor(this.type,this.theme); }
   get stats() {
     const base = this.spec;
-    const stats = { ...base, damage: base.damage * (this.level >= 2 ? 1.45 : 1), range: base.range + (this.level >= 2 ? CONFIG.towerUpgradeRange : 0) };
+    const stats = { ...base, damage: base.damage * (this.level >= 2 ? base.growth : 1), range: base.range + (this.level >= 2 ? CONFIG.towerUpgradeRange : 0) };
     if (this.branch !== null) {
       const path = this.paths[this.branch];
       stats.damage *= path.damage || 1; stats.range += path.range || 0; stats.cooldown *= path.cooldown || 1;
-      for (const key of ["pierce", "slow", "duration", "stun", "splash", "burn", "multi", "chain", "chainRange", "shieldMultiplier", "focus", "focusGain", "repair", "shred", "jam"]) {
+      for (const key of ["pierce", "slow", "duration", "stun", "splash", "burn", "multi", "chain", "chainRange", "shieldMultiplier", "focus", "focusGain", "repair", "shred", "jam","lineHits","healBlock","silence"]) {
         if (path[key] !== undefined) stats[key] = path[key];
       }
     }
@@ -170,7 +197,7 @@ class Tower {
 
     }
     if(this.branch!==null)stats.color=THEME_EQUIPMENT[this.theme].colors[this.branch];
-    if (this.level === 4) { stats.damage *= 1.4; stats.range += CONFIG.towerFinalRange; }
+    if (this.level === 4) { const path=this.paths[this.branch];stats.damage *= path.finalDamage;stats.cooldown*=path.finalRate;stats.range += CONFIG.towerFinalRange; }
     if(this.type==="depot")stats.rallyRange=stats.range;
     return stats;
   }
@@ -184,12 +211,15 @@ class Tower {
   get sellValue() { return Math.floor(this.invested * CONFIG.sellRatio); }
   update(dt, game) {
     this.fireTime = Math.max(0, this.fireTime - dt);
+    for(const key of ["jammedTime","jamGuardTime","hasteTime"])this[key]=Math.max(0,this[key]-dt);
+    if(!this.hasteTime)this.hastePower=0;
+    if(this.jammedTime>0)return;
     if(this.type==="depot") {
       if(!this.rally)this.rally=(game.buildRoad||game.road).nearestPoint(this);
       while(this.soldiers.length<this.stats.soldierCount)this.soldiers.push(new Soldier(this,this.soldiers.length));
       this.soldiers.forEach(s=>s.update(dt,game));return;
     }
-    this.cooldown = Math.max(0, this.cooldown - dt);
+    this.cooldown = Math.max(0, this.cooldown - dt*(1+this.hastePower));
     const stats = this.stats;
     if (stats.repair) {
       this.supportTimer = (this.supportTimer || 0) - dt;
@@ -203,7 +233,7 @@ class Tower {
     const candidates = game.enemies.filter(e => !e.dead && Collision.distance(this, e) <= stats.range);
     candidates.sort((a, b) => {
       if (this.targetMode === 1) return (b.health + b.shield) - (a.health + a.shield);
-      if (this.targetMode === 2) return Number(Boolean(b.spec.heal)) - Number(Boolean(a.spec.heal)) || a.remaining - b.remaining;
+      if (this.targetMode === 2) return Number(CombatRules.support(b.spec)) - Number(CombatRules.support(a.spec)) || a.remaining - b.remaining;
       return a.remaining - b.remaining;
     });
     if (!candidates.length) { this.focusTarget = null; this.focusStacks = 0; return; }
@@ -267,7 +297,7 @@ class Soldier {
       return;
     }
     this.health=Math.min(this.maxHealth,this.health+(stats.soldierRegen||0)*dt);
-    this.cooldown=Math.max(0,this.cooldown-dt);
+    this.cooldown=Math.max(0,this.cooldown-dt*(1+this.owner.hastePower));
     if(this.target&&(this.target.dead||Collision.distance(this.target,rally)>CONFIG.soldierLeash||(this.target.blocker&&this.target.blocker!==this)))this.release();
     if(!this.target)this.target=game.enemies.filter(e=>!e.dead&&!e.blocker&&Collision.distance(e,rally)<=CONFIG.soldierLeash
       && !game.towers.some(t=>t.soldiers.some(s=>s!==this&&s.alive&&s.target===e)))
@@ -291,9 +321,11 @@ function applyHit(enemy, damage, stats, game) {
   if (enemy.dead) return;
   if (stats.shred) {enemy.shredTime=4;enemy.shredAmount=Math.max(enemy.shredAmount,stats.shred);}
   if (stats.jam) enemy.jamTime=Math.max(enemy.jamTime,stats.jam);
+  if (stats.silence) enemy.silenceTime=Math.max(enemy.silenceTime,stats.silence);
+  if (stats.healBlock) enemy.healBlockTime=Math.max(enemy.healBlockTime,stats.healBlock);
   if (stats.slow) enemy.slow(stats.slow, stats.duration);
   if (stats.stun) enemy.stun(stats.stun);
-  if (stats.burn) { enemy.burnDamage = Math.max(enemy.burnDamage, stats.burn); enemy.burnTime = Math.max(enemy.burnTime, stats.duration); }
+  if (stats.burn) { enemy.burnDamage = Math.max(enemy.burnTime > 0 ? enemy.burnDamage : 0, stats.burn); enemy.burnTime = Math.max(enemy.burnTime, stats.duration); }
 }
 class Projectile {
   constructor(tower, target, stats) {
@@ -311,6 +343,13 @@ class Projectile {
       const victims = this.stats.splash ? game.enemies.filter(e => !e.dead && Collision.distance(e, this.destination) <= this.stats.splash)
         : (this.target.dead ? [] : [this.target]);
       victims.forEach(e => applyHit(e, this.stats.damage, this.stats, game));
+      if(this.stats.lineHits){
+        const dx=this.destination.x-this.origin.x,dy=this.destination.y-this.origin.y,length=Math.max(.01,Math.hypot(dx,dy));
+        const tail={x:this.destination.x+dx/length*TACTIC_PARAMETERS.lineReach,y:this.destination.y+dy/length*TACTIC_PARAMETERS.lineReach};
+        game.enemies.filter(e=>!e.dead&&!victims.includes(e)&&(e.x-this.destination.x)*dx+(e.y-this.destination.y)*dy>0&&(e.x-this.destination.x)*dx+(e.y-this.destination.y)*dy<=length*TACTIC_PARAMETERS.lineReach&&Collision.segmentDistance(e,this.destination,tail)<=TACTIC_PARAMETERS.lineWidth)
+          .sort((a,b)=>Collision.distance(a,this.destination)-Collision.distance(b,this.destination)).slice(0,this.stats.lineHits-1)
+          .forEach(e=>{applyHit(e,this.stats.damage*.7,this.stats,game);game.beam(this.destination,e,this.stats.color,this.visual);});
+      }
       game.effect(this.destination, this.stats.color, this.stats.splash || 12, this.visual);
     } else {
       this.x += (this.destination.x - this.x) / distance * step; this.y += (this.destination.y - this.y) / distance * step;

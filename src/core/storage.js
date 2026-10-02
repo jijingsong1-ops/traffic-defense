@@ -2,9 +2,10 @@
 
 // 三个独立战役位。只保存通关/研究进度，不保存正在进行的战斗。
 const Progress = {
-  blank: () => ({schema:3, stars:LEVELS.map(() => 0)}),
+  blank: () => ({schema:5, stars:LEVELS.map(() => 0), skills:SkillBook.blank()}),
   clean(data) {
-    return {schema:3, stars:LEVELS.map((_,i) => Number.isInteger(data?.stars?.[i]) ? Math.max(0,Math.min(3,data.stars[i])) : 0)};
+    const stars=LEVELS.map((_,i) => Number.isInteger(data?.stars?.[i]) ? Math.max(0,Math.min(3,data.stars[i])) : 0);
+    return {schema:5, stars, skills:SkillBook.clean(data?.skills,stars)};
   },
   read() {
     const empty={schema:4, activeSlot:0, slots:[null,null,null]};

@@ -20,6 +20,7 @@ function setup(saved = null, failStorage = false) {
     localStorage: { getItem: () => stored, setItem: (_, value) => { if (failStorage) throw Error('denied'); stored = value; } } };
   vm.createContext(sandbox);
   const api = vm.runInContext(source + '\n({game, Game, Enemy, Tower, Projectile, Renderer, Progress, LEVELS, CHAPTERS, TOWERS, ENEMIES, CONFIG, Collision, RoadNetwork, applyHit, planConstructionSites, Soldier, Sound, SoundEngine, Traffic, CivilVehicle, ROAD_TYPES, EVOLUTIONS, evolutionRequirement, MUSIC_TRACKS, ROAD_LAYOUTS, MAP, Platform, MobileLayout})', sandbox);
+  Object.assign(api, vm.runInContext('({SkillBook, SkillActions, CombatRules, SKILLS, SKILL_ORDER, CHAPTER_THREATS, Encounters, Lanes, ENEMY_PROFILES, MECHANICS})',sandbox));
   return { ...api, sandbox, stored: () => stored };
 }
 function battle() { const api = setup(); api.game.startLevel(0); return api; }
@@ -201,7 +202,7 @@ test('opening stage and all chapter finales are winnable with legal spending and
 test('building is a two-step site-first operation and selling frees the same site', () => {
   const { game } = battle();
   assert.equal(game.selectBuild('rail'), false);
-  game.click({ x: 400, y: 340 }); assert.equal(game.selectedSite, null); assert.equal(game.towers.length, 0);
+  game.click({ x: 26, y: 100 }); assert.equal(game.selectedSite, null); assert.equal(game.towers.length, 0);
   const site = game.sites[0]; game.click(site);
   assert.equal(game.selectedSite, site); assert.equal(game.gold, 350);
   assert.equal(game.selectBuild('rail'), true); assert.equal(game.gold, 270);
@@ -215,7 +216,7 @@ test('dense construction sites stay close to roads, clear of lanes and other sit
   for (const level of LEVELS) {
     const road = new RoadNetwork(level, true);
     const sites = level.sites.map(([x,y]) => ({x,y}));
-    assert.ok(sites.length >= 28, `${level.name} has only ${sites.length} sites`);
+    assert.ok(sites.length >= 24, `${level.name} has only ${sites.length} sites on four-lane roads`);
     assert.deepEqual(planConstructionSites(level),level.sites);
     for (const [i,site] of sites.entries()) {
       assert.equal(road.isRoad(site, CONFIG.towerRadius + 4), false, `${level.name} site ${i+1} overlaps road`);
@@ -227,7 +228,7 @@ test('dense construction sites stay close to roads, clear of lanes and other sit
 });
 test('four core towers are always available and legacy stars survive migration', () => {
   const {game,Progress}=setup(JSON.stringify({schema:2,stars:[3,2,0],decks:[['laser']],legacyTowers:['tesla']}));
-  assert.equal(game.unlocked,2); assert.equal(game.progress.schema,3);
+  assert.equal(game.unlocked,2); assert.equal(game.progress.schema,5);
   assert.deepEqual(Array.from(game.getDeck()),['rail','signal','missile','depot']);
   assert.equal(game.towerUnlocked('laser'),false);
   assert.equal(game.progress.stars[1],2);assert.equal(game.progress.stars.length,48);
@@ -700,7 +701,7 @@ test('vehicles leave entrance space, follow slower traffic and separate split ch
     lead.update(1/60,game);fast.update(1/60,game);
     assert.ok(fast.remaining-lead.remaining>=(lead.bodyLength+fast.bodyLength)/2+CONFIG.trafficGap-.001);
   }
-  game.startLevel(0);game.startWave();game.spawnQueue=[{type:'armor',scale:1,wave:1},{type:'runner',scale:1,wave:1}];
+  game.startLevel(0);game.startWave();game.spawnQueue=['armor','runner'].map((type,i)=>({type,scale:1,wave:1,entry:0,lane:0,span:1,group:`test${i}`,due:i*.5}));
   game.update(.01);const first=game.enemies[0];first.stunTime=2;game.update(.8);assert.equal(game.enemies.length,1);
   first.stunTime=0;for(let i=0;i<100;i++)game.update(.02);
   assert.ok(game.enemies.length>=2);assert.ok(Collision.distance(game.enemies[0],game.enemies[1])>25);
@@ -716,7 +717,7 @@ test('stronger health keeps the smaller vehicle art separate from combat size',(
     assert.equal(enemy.maxHealth,spec.hp*2*(spec.boss?CONFIG.bossHealthMultiplier:CONFIG.enemyHealthMultiplier));
     Renderer.vehicle(type,100,200,Math.PI/4,true,true);Renderer.enemy(enemy);
   }
-  assert.equal(CONFIG.enemyVisualScale,.88);
+  assert.ok(CONFIG.enemyVisualScale<=.88);assert.ok(21*CONFIG.enemyVisualScale<CONFIG.laneWidth);
 });
 
 test('each chapter offers manual forks and all four traffic objectives with announced route events',()=>{
@@ -911,4 +912,270 @@ test('demolition waves siege the actual deck, stun interrupts attacks and neglec
   game.startLevel(3);const outside=new Enemy('demolisher',game.road.path(0));game.enemies=[outside];
   Traffic.update(game,5);assert.equal(game.traffic.integrity,100,'no arbitrary damage away from bridge');
   assert.ok(CONFIG.bossHealthMultiplier>=1.9&&CONFIG.enemyHealthMultiplier>=1.4);
+});
+
+test('physical, magic, piercing and true damage have different counters; shields absorb first',()=>{
+  const {game,Enemy}=battle(),path=game.road.path(0);
+  const loss=(type,attack)=>{const e=new Enemy(type,path,10),hp=e.health;e.hit(100,game,attack);return hp-e.health;};
+  assert.equal(loss('insulated',{damageType:'physical'}),95);
+  assert.equal(loss('insulated',{damageType:'magic'}),35);
+  assert.equal(loss('insulated',{damageType:'magic',pierce:true}),35,'piercing never bypasses magic resistance');
+  assert.equal(loss('bulldozer',{damageType:'physical'}),70);
+  assert.equal(loss('bulldozer',{damageType:'magic'}),90);
+  assert.equal(loss('bulldozer',{damageType:'physical',pierce:true}),100);
+  assert.equal(loss('bulldozer',{damageType:'true'}),100);
+  const shield=new Enemy('shield',path,10),hp=shield.health;shield.shield=120;
+  shield.hit(50,game,{damageType:'true',shieldMultiplier:3});
+  assert.equal(shield.shield,0);assert.equal(hp-shield.health,10);
+});
+
+test('burn uses magic resistance, does not stack, and expired strong burns do not amplify new ones',()=>{
+  const {game,Enemy,applyHit}=battle(),enemy=new Enemy('insulated',game.road.path(0),10);game.enemies=[enemy];
+  const hp=enemy.health;applyHit(enemy,0,{burn:40,duration:1},game);applyHit(enemy,0,{burn:20,duration:1},game);
+  enemy.update(1,game);assert.ok(Math.abs(hp-enemy.health-14)<1e-6);assert.equal(enemy.burnDamage,0);
+  applyHit(enemy,0,{burn:10,duration:1},game);assert.equal(enemy.burnDamage,10);
+});
+
+test('control immunity, group cleanse and silence are actual combat rules',()=>{
+  const {game,Enemy,CombatRules,applyHit}=battle(),path=game.road.path(0);
+  const immune=new Enemy('bulldozer',path),relay=new Enemy('relay',path),ally=new Enemy('scout',path);
+  immune.stun(5);immune.slow(.2,5);assert.equal(immune.stunTime,0);assert.equal(immune.slowTime,0);
+  game.enemies=[relay,ally];ally.stun(5);ally.slow(.2,5);relay.abilityTimer=.1;
+  applyHit(relay,0,{silence:2},game);CombatRules.enemyAbility(relay,1,game);
+  assert.equal(relay.abilityTimer,.1);assert.equal(ally.stunTime,5);
+  relay.silenceTime=0;CombatRules.enemyAbility(relay,.2,game);
+  assert.equal(ally.stunTime,0);assert.equal(ally.slowTime,0);ally.stun(4);assert.equal(ally.stunTime,0);
+  ally.update(.9,game);ally.stun(4);assert.equal(ally.stunTime,4,'cleanse protection expires');
+});
+
+test('healing can be blocked on recipients or silenced at its source',()=>{
+  const {game,Enemy,applyHit}=battle(),path=game.road.path(0);
+  const healer=new Enemy('healer',path),ally=new Enemy('scout',path,10);game.enemies=[healer,ally];
+  ally.health-=100;healer.healTimer=0;const hp=ally.health;
+  applyHit(ally,0,{healBlock:3},game);healer.update(.01,game);assert.equal(ally.health,hp);
+  ally.healBlockTime=0;healer.healTimer=0;applyHit(healer,0,{silence:3},game);
+  healer.update(.01,game);assert.equal(ally.health,hp);
+  healer.silenceTime=0;healer.update(.01,game);assert.ok(ally.health>hp);
+});
+
+test('jammer disables a nearby tower, releases blockers, and repair protection prevents repeat locks',()=>{
+  const {game,Enemy,Tower,CombatRules,SkillActions}=battle();
+  const enemy=new Enemy('jammer',game.road.path(0)),tower=new Tower('depot',enemy.x,enemy.y);
+  let released=false;tower.soldiers=[{release(){released=true;}}];game.towers=[tower];game.enemies=[enemy];
+  enemy.abilityTimer=1.5;CombatRules.enemyAbility(enemy,1,game);assert.equal(tower.jammedTime,0);
+  CombatRules.enemyAbility(enemy,.6,game);assert.equal(tower.jammedTime,2.4);assert.equal(released,true);
+  tower.soldiers=[];assert.equal(SkillActions.cast(game,'repair',tower),true);assert.equal(tower.jammedTime,0);assert.equal(tower.jamGuardTime,6);
+  enemy.abilityTimer=0;CombatRules.enemyAbility(enemy,.1,game);assert.equal(tower.jammedTime,0);
+  tower.jamGuardTime=0;tower.type='rail';tower.cooldown=2;tower.jammedTime=2;tower.update(.1,game);assert.equal(tower.cooldown,2);
+});
+
+test('linear penetration hits only two following cars in its finite corridor',()=>{
+  const {game,Enemy,Tower,Projectile}=battle(),path=game.road.path(0),tower=new Tower('rail',100,300);
+  const positions=[[200,300],[240,300],[270,310],[300,300],[210,330],[365,300],[180,300]];
+  game.enemies=positions.map(([x,y])=>Object.assign(new Enemy('scout',path,10),{x,y}));
+  const health=game.enemies.map(e=>e.health),shot=new Projectile(tower,game.enemies[0],{damage:100,damageType:'true',lineHits:3,color:'#fff'});
+  shot.update(1,game);assert.equal(shot.dead,true);
+  assert.deepEqual(game.enemies.map((e,i)=>Math.round(health[i]-e.health)),[100,70,70,0,0,0,0]);
+});
+
+test('all biome branches have distinct damage/rate growth and defined damage types',()=>{
+  const {Tower,TOWERS,CHAPTERS}=setup();
+  for(const chapter of CHAPTERS)for(const type of Object.keys(TOWERS)){
+    const rates=[];
+    for(const branch of [0,1]){const t=new Tower(type,0,0,chapter.theme);t.branch=branch;t.level=3;const a=t.stats;t.level=4;const b=t.stats;
+      assert.equal(b.damageType,type==='signal'?'magic':'physical');assert.ok(b.damage>a.damage);rates.push([b.damage/a.damage,b.cooldown/a.cooldown]);
+      if(type==='signal'&&branch===1)assert.ok(b.silence>0);
+      if((type==='rail'||type==='depot')&&branch===1)assert.ok(b.healBlock>0);
+    }
+    assert.notDeepEqual(rates[0],rates[1]);
+  }
+});
+
+test('skill research migrates three saves, preserves dates and isolates loadouts',()=>{
+  const dates=[1000,2000,3000],saved={schema:4,activeSlot:1,slots:dates.map(createdAt=>({schema:4,stars:[3,3],createdAt,lastPlayedAt:4000}))};
+  const {game,Progress,SkillBook}=setup(JSON.stringify(saved));game.screen='menu';
+  assert.equal(SkillBook.available(game.progress),6);assert.equal(game.upgradeSkill('emp'),true);assert.equal(game.equipSkill('emp',0),true);
+  const slots=Progress.list();assert.deepEqual(Array.from(slots,s=>s.createdAt),dates);assert.equal(slots[1].skills.upgrades.emp.level,2);
+  assert.equal(slots[0].skills.upgrades.emp.level,1);assert.equal(slots[2].skills.loadout[0],'strike');
+  const reloaded=Progress.load(1);assert.equal(reloaded.skills.loadout[0],'emp');assert.equal(SkillBook.available(reloaded),3);
+});
+
+test('star costs, mutually exclusive evolutions, refunds and replay earnings cannot inflate currency',()=>{
+  const {game,SkillBook}=setup();game.screen='menu';game.progress.stars.fill(0);game.progress.stars[0]=3;
+  assert.equal(game.upgradeSkill('emp'),true);assert.equal(SkillBook.available(game.progress),0);assert.equal(game.upgradeSkill('strike'),false);
+  game.progress.stars[1]=3;game.progress.stars[2]=3;assert.equal(game.upgradeSkill('emp'),false,'branch choice required');
+  assert.equal(game.upgradeSkill('emp',1),true);assert.equal(SkillBook.available(game.progress),1);assert.equal(game.upgradeSkill('emp',0),false);
+  assert.equal(game.resetSkills(),true);assert.equal(SkillBook.available(game.progress),9);assert.equal(game.progress.skills.upgrades.emp.branch,null);
+  game.startLevel(0);game.finish(true);assert.equal(SkillBook.earned(game.progress),9,'replaying a 3-star level grants no new currency');
+  const corrupt=SkillBook.clean({loadout:['emp','emp','unknown'],upgrades:{strike:{level:4,branch:1},emp:{level:4,branch:0}}},[3]);
+  assert.equal(SkillBook.spent(corrupt),3);assert.equal(corrupt.upgrades.emp.level,1);assert.equal(new Set(corrupt.loadout).size,2);
+});
+
+test('two skill slots swap without duplicates and are frozen during combat',()=>{
+  const {game}=setup();game.screen='menu';game.progress.stars.fill(3);
+  game.equipSkill('emp',0);game.equipSkill('emp',1);assert.deepEqual(Array.from(game.progress.skills.loadout),['freeze','emp']);
+  game.upgradeSkill('emp');game.upgradeSkill('emp',1);game.startLevel(0);
+  const spec=JSON.stringify(game.skillSpecs.emp);assert.equal(game.upgradeSkill('emp'),false);assert.equal(game.resetSkills(),false);assert.equal(game.equipSkill('repair',0),false);
+  assert.equal(JSON.stringify(game.skillSpecs.emp),spec);assert.equal(game.selectSkill('strike'),false);assert.equal(game.selectSkill('emp'),true);
+  assert.equal(game.cast({x:-1,y:-1}),false);assert.equal(game.skillCooldowns.emp,0);
+  game.enemies=[];assert.equal(game.cast({x:500,y:300}),false);assert.equal(game.skillCooldowns.emp,0);
+});
+
+test('all skill ranks and branches produce finite specs and max research stays within earned stars',()=>{
+  const {SkillBook,SKILLS,LEVELS}=setup(),research=SkillBook.blank();
+  for(const key of Object.keys(SKILLS))for(const branch of [0,1])for(let level=1;level<=4;level++){
+    research.upgrades[key]={level,branch:level>=3?branch:null};
+    for(const stage of [LEVELS[0],LEVELS[47]]){const spec=SkillBook.stats(research,key,stage);assert.ok(spec.cooldown>0&&spec.radius>0&&Number.isFinite(spec.damage));}
+  }
+  assert.equal(SkillBook.spent(research),96);assert.equal(SkillBook.spent(SkillBook.clean(research,Array(48).fill(3))),96);
+});
+
+test('EMP suppresses abilities and shields, while advanced freeze respects control immunity',()=>{
+  const {game,Enemy,SkillActions,SkillBook}=battle(),path=game.road.path(0),relay=new Enemy('relay',path,10),shield=new Enemy('shield',path,10);
+  game.enemies=[relay,shield];shield.shield=500;SkillActions.cast(game,'emp',relay);
+  assert.equal(relay.silenceTime,5);assert.equal(shield.jamTime,5);assert.equal(shield.shield,260);assert.equal(game.skillCooldowns.emp,32);
+  game.progress.skills.upgrades.freeze={level:3,branch:1};game.skillSpecs.freeze=SkillBook.stats(game.progress.skills,'freeze',game.level);
+  const immune=new Enemy('bulldozer',path);game.enemies=[relay,immune];SkillActions.cast(game,'freeze',relay);
+  assert.ok(relay.stunTime>0&&relay.slowTime===8);assert.equal(immune.stunTime,0);assert.equal(immune.slowTime,0);
+});
+
+test('heat zones expire and pause with battle',()=>{
+  const {game,Enemy,SkillActions}=battle(),point=game.road.path(0)[1],enemy=Object.assign(new Enemy('scout',game.road.path(0),10),point);
+  game.enemies=[enemy];assert.equal(SkillActions.cast(game,'fire',point),true);SkillActions.update(game,.1);assert.equal(enemy.burnDamage,24);
+  const life=game.skillZones[0].life;game.paused=true;game.update(1);assert.equal(game.skillZones[0].life,life);
+  game.skillZones[0].life=0;enemy.burnTime=0;SkillActions.update(game,1);assert.equal(enemy.burnTime,0);assert.equal(game.skillZones.length,0);
+});
+
+test('repair restores damaged bus and actual bridge, and overdrive changes attack rate without damage',()=>{
+  const {game,Tower,CivilVehicle,SkillActions}=battle();game.progress.stars.fill(3);game.startLevel(3);
+  const bridge=game.traffic.bridge,tower=new Tower('rail',bridge.x,bridge.y),bus=Object.assign(new CivilVehicle('bus',game.road.path(0)),bridge);
+  game.towers=[tower];game.traffic.civilians=[bus];bus.health=50;game.traffic.integrity=60;
+  SkillActions.cast(game,'repair',tower);assert.equal(bus.health,82);assert.equal(game.traffic.integrity,92);
+  const damage=tower.stats.damage;tower.cooldown=10;SkillActions.cast(game,'overdrive',tower);tower.update(1,game);
+  assert.equal(tower.stats.damage,damage);assert.ok(Math.abs(tower.cooldown-8.65)<1e-8);assert.equal(tower.hasteTime,6);
+});
+
+test('codex renders every tower branch/rank, all enemy entries and every skill evolution',()=>{
+  const {game,Renderer,CHAPTERS,TOWERS,ENEMIES,SKILLS,CHAPTER_THREATS}=setup();game.screen='menu';game.progress.stars.fill(3);game.openCodex();
+  const encountered=new Set();
+  for(const chapter of CHAPTERS){game.codex.chapter=CHAPTERS.indexOf(chapter);
+    for(const type of Object.keys(TOWERS))for(const branch of [0,1])for(const rank of [1,2,3,4]){Object.assign(game.codex,{tab:'towers',type,branch,rank,detailPage:0});Renderer.draw(game);}
+    const main=[...chapter.pool,chapter.boss,...CHAPTER_THREATS[game.codex.chapter],'raider','demolisher'];
+    for(const enemy of [...main,...main.filter(k=>ENEMIES[k].split).map(k=>ENEMIES[k].splitType||'swarm')]){encountered.add(enemy);Object.assign(game.codex,{tab:'enemies',enemy,detailPage:0});Renderer.draw(game);}
+  }
+  assert.equal(encountered.size,Object.keys(ENEMIES).length,'every enemy is discoverable through chapters');
+  for(const skill of Object.keys(SKILLS))for(const branch of [0,1])for(const level of [1,2,3,4]){
+    game.progress.skills.upgrades[skill]={level,branch:level>=3?branch:null};Object.assign(game.codex,{tab:'skills',skill,branch});Renderer.draw(game);
+    assert.ok(game.buttons.some(b=>b.label.includes('装入 Q')||b.label.includes('Q · 已装备')));
+  }
+});
+
+test('skill codex retains every current and next effect without truncating its six-line panel',()=>{
+  const {game,Renderer,SkillBook,SKILLS}=setup();
+  for(const skill of Object.keys(SKILLS))for(const branch of [0,1])for(const level of [1,2,3,4]){
+    const current=SkillBook.blank(),next=SkillBook.blank();current.upgrades[skill]={level,branch:level>=3?branch:null};
+    next.upgrades[skill]={level:Math.min(4,level+1),branch:level>=2?branch:null};
+    const a=SkillBook.stats(current,skill),b=SkillBook.stats(next,skill);
+    const lines=Renderer.skillMechanics(skill,a,b).flatMap(line=>Renderer.bookWrap(line));
+    assert.ok(lines.length<=6,`${skill} L${level} branch${branch}: ${lines.length} lines`);
+    if(skill==='emp'&&level===2&&branch===1)assert.ok(lines.some(line=>line.includes('5→8秒')));
+  }
+});
+
+test('every convoy roster exactly matches deployed enemies across all 48 stages',()=>{
+  const {game,LEVELS,Encounters}=setup();game.progress.stars.fill(3);
+  for(let i=0;i<LEVELS.length;i++){
+    game.startLevel(i);const counts={},perEntry=Encounters.entrances(game.level).map(()=>({}));
+    for(let wave=1;wave<=game.level.waves;wave++){
+      assert.equal(game.startWave(true),true);
+      const expected=game.spawnQueue.map(b=>({...b}));
+      expected.forEach(b=>perEntry[b.entry][b.type]=(perEntry[b.entry][b.type]||0)+1);
+      let steps=0;
+      while(game.spawnQueue.length&&steps++<500){
+        Encounters.deploy(game,1);for(const e of game.enemies)counts[e.type]=(counts[e.type]||0)+1;game.enemies=[];
+      }
+      assert.equal(game.spawnQueue.length,0,game.level.id+' deployment finishes');
+    }
+    const normalize=o=>JSON.stringify(Object.entries(o).sort());
+    assert.equal(normalize(counts),normalize(Encounters.roster(game.level).counts),game.level.id);
+    perEntry.forEach((counts,id)=>assert.equal(normalize(counts),normalize(Encounters.roster(game.level,id).counts)));
+    assert.equal(Encounters.roster(game.level).ambush,game.level.mission==='bus'?8:0);
+  }
+});
+
+test('entry preferences produce majority armor, resistance and fast formations',()=>{
+  const {Encounters,LEVELS,ENEMIES}=setup(),level=LEVELS[2],entries=Encounters.entrances(level);
+  assert.equal(entries.length,3);assert.deepEqual(Array.from(entries,e=>e.profile),['magic','armor','fast']);
+  const ratio=(id,predicate)=>{const r=Encounters.roster(level,id);return Object.entries(r.counts).reduce((n,[key,count])=>n+(predicate(ENEMIES[key])?count:0),0)/r.total;};
+  assert.ok(ratio(0,e=>e.magicResist>=.3)>.65);assert.ok(ratio(1,e=>e.armor>=.25)>.65);assert.ok(ratio(2,e=>e.speed>=75)>.65);
+  assert.ok(LEVELS.filter(l=>Encounters.entrances(l).length>1).length>=16);
+});
+
+test('independent entrances deploy simultaneously and a blocked lane does not stall another entrance',()=>{
+  const {game,Enemy,Encounters,LEVELS}=setup();game.progress.stars.fill(3);game.startLevel(2);game.startWave(true);
+  Encounters.deploy(game,.01);assert.equal(game.enemies.length,9);
+  assert.equal(new Set(game.enemies.map(e=>`${e.path[0].x},${e.path[0].y}`)).size,3);
+  game.startLevel(2);game.startWave(true);const blocker=new Enemy('armor',game.road.path(0),1,{lane:0,span:1});game.enemies=[blocker];
+  Encounters.deploy(game,.01);assert.equal(game.spawnQueue.filter(b=>b.entry===0&&b.due===0).length,4);
+  assert.ok(game.enemies.some(e=>e.path===game.road.path(1)));assert.ok(game.enemies.some(e=>e.path===game.road.path(2)));
+});
+
+test('ordinary formations occupy four distinct lanes; bosses reserve two without sharing slots',()=>{
+  const {Encounters,LEVELS}=setup();
+  for(const level of LEVELS)for(const row of Encounters.wave(level,level.waves)){
+    const occupied=new Set();for(const member of row.members)for(let lane=member.lane;lane<member.lane+member.span;lane++){
+      assert.ok(lane>=0&&lane<4);assert.ok(!occupied.has(lane));occupied.add(lane);
+    }
+    if(row.members.some(m=>m.span===2))assert.ok(level.boss);
+  }
+  const rows=Encounters.wave(LEVELS[0],1);assert.equal(rows[0].members.length,4);assert.ok(rows[1].due>=2.8);
+  const fast=Encounters.wave(LEVELS[4],1);assert.ok(fast.some((row,i)=>i>0&&row.due-fast[i-1].due<1));
+});
+
+test('blocked cars queue only within their own lanes, while other lanes pass',()=>{
+  const {game,Enemy,Lanes,CONFIG}=battle(),path=[{x:100,y:320},{x:1100,y:320}];
+  const lead=new Enemy('armor',path,1,{lane:0,span:1}),rear=new Enemy('scout',path,1,{lane:0,span:1}),parallel=new Enemy('scout',path,1,{lane:3,span:1});
+  lead.center.x=200;lead.stunTime=100;Lanes.sync(lead);game.enemies=[lead,rear,parallel];
+  for(let n=0;n<300;n++)for(const e of game.enemies)e.update(1/60,game);
+  assert.ok(parallel.center.x>lead.center.x+100);assert.ok(rear.center.x<lead.center.x);
+  assert.ok(lead.center.x-rear.center.x>=(lead.bodyLength+rear.bodyLength)/2+CONFIG.trafficGap-.01);
+  lead.lane=1;lead.laneSpan=2;assert.equal(Lanes.overlap(lead,{lane:2,laneSpan:1}),true);assert.equal(Lanes.overlap(lead,parallel),false);
+});
+
+test('same-lane cars leave a gap through a merge instead of overlapping',()=>{
+  const {game,Enemy,Lanes,CONFIG,Collision}=battle();
+  const a=[{x:100,y:220},{x:400,y:320},{x:1000,y:320}],b=[{x:100,y:420},{x:400,y:320},{x:1000,y:320}];
+  const first=new Enemy('scout',a,1,{lane:1}),second=new Enemy('scout',b,1,{lane:1});game.enemies=[first,second];
+  for(let n=0;n<900;n++){first.update(1/60,game);second.update(1/60,game);
+    if(first.segment===1&&second.segment===1)assert.ok(Collision.distance(first,second)>=(first.bodyLength+second.bodyLength)/2+CONFIG.trafficGap-.1);
+  }
+  assert.equal(first.segment,1);assert.equal(second.segment,1);
+});
+
+test('lane positions remain inside every original and alternate road through corners',()=>{
+  const {LEVELS,RoadNetwork,Lanes,CONFIG,Collision}=setup();
+  for(const level of LEVELS){const road=new RoadNetwork(level,true);
+    for(const path of road.routes)for(let segment=0;segment<path.length-1;segment++)for(const lane of [0,1,2,3])for(const t of [0,.25,.5,.75,1]){
+      const a=path[segment],b=path[segment+1],center={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+      const p=Lanes.point(path,segment,center,Lanes.offset(lane));
+      assert.ok(road.edges.some(([x,y])=>Collision.segmentDistance(p,x,y)<=CONFIG.roadWidth/2+.01),level.id+' lane '+lane);
+    }
+  }
+});
+
+test('split reinforcements keep their lane and are separated from the existing convoy',()=>{
+  const {game,Enemy,Lanes,Collision,CONFIG}=battle(),path=[{x:100,y:300},{x:1100,y:300}];
+  const parent=new Enemy('splitter',path,1,{lane:2}),trailer=new Enemy('armor',path,1,{lane:2});parent.center.x=400;trailer.center.x=350;Lanes.sync(parent);Lanes.sync(trailer);
+  game.enemies=[parent,trailer];parent.hit(9999,game);const living=game.enemies.filter(e=>!e.dead);
+  assert.equal(living.length,4);assert.ok(living.every(e=>e.lane===2&&e.path===path));
+  for(let i=0;i<living.length;i++)for(const other of living.slice(i+1))assert.ok(Collision.distance(living[i],other)>=(living[i].bodyLength+other.bodyLength)/2+CONFIG.trafficGap-.01);
+});
+
+test('widened bridge detects outer lanes and route changes preserve lane assignments',()=>{
+  const {game,Enemy,Lanes,Traffic}=battle();game.progress.stars.fill(3);game.startLevel(3);
+  const path=game.road.path(0),span=game.traffic.bridge,enemy=new Enemy('demolisher',path,1,{lane:3});
+  enemy.segment=span.segment;enemy.center={x:span.x,y:span.y};Lanes.sync(enemy);game.enemies=[enemy];
+  assert.ok(Traffic.bridgeAt(game,enemy));Traffic.update(game,.5);assert.ok(game.traffic.integrity<100);
+  const waiting=new Enemy('armor',path,1,{lane:0});waiting.center.x+=15;Lanes.sync(waiting);game.enemies=[waiting];game.wave=game.level.routeEvent.wave;game.applyRouteEvent();
+  assert.equal(waiting.lane,0);assert.equal(waiting.path,game.road.path(0));assert.ok(Number.isFinite(waiting.x));
 });

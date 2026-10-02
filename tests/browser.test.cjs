@@ -23,6 +23,7 @@ function boot(width=1366,height=768,saved=new Map()){
     localStorage:{getItem:key=>saved.get(key)||null,setItem:(key,value)=>saved.set(key,value)}};
   vm.createContext(sandbox);
   const api=vm.runInContext(source+'\n'+exportsCode,sandbox);
+  api.Encounters=vm.runInContext('Encounters',sandbox);
   const draw=()=>{texts.length=0;api.Renderer.draw(api.game);api.Platform.present(api.game);};
   const event=(point,extra={})=>({clientX:rect.left+point.x*api.Platform.viewport.scale,
     clientY:rect.top+point.y*api.Platform.viewport.scale,button:0,pointerId:1,isPrimary:true,...extra});
@@ -38,6 +39,55 @@ function boot(width=1366,height=768,saved=new Map()){
     resize:(width,height)=>{rect={...rect,width,height};listeners.window.resize();draw();}};
 }
 function start(api){api.press('开始游戏');api.press('新建');api.press(b=>b.levelIndex===0);api.press('开始战斗');}
+
+test('battle brief filters independent entrances, shows actual wave totals and keeps skill return state',()=>{
+  const a=boot(),{game,press}=a;press('开始游戏');press('新建');game.progress.stars.fill(3);
+  press(b=>b.levelIndex===2);
+  const level=a.LEVELS[2],total=Array.from({length:level.waves},(_,i)=>a.Encounters.wave(level,i+1).flatMap(g=>g.members).length).reduce((sum,n)=>sum+n,0);
+  assert.ok(a.texts.some(t=>t.text.startsWith(`主队 ${total} 辆`)));
+  press(b=>b.label?.startsWith('B ·'));
+  assert.equal(game.intelEntry,1);assert.ok(a.texts.some(t=>t.text.includes('出车口 B：魔法 / 穿甲')));
+  press('出战技能');press('关闭');assert.equal(game.modal,'level');assert.equal(game.intelEntry,1);
+  press('全关敌情');assert.equal(game.intelEntry,null);
+  press('关闭');press(b=>b.levelIndex===1);assert.ok(a.texts.some(t=>t.text.includes('另有站点伏击8辆')));
+  press('开始战斗');assert.equal(game.levelIndex,1);
+});
+
+test('concise unit pages open complete mechanics separately and preserve the selected unit',()=>{
+  const a=boot(),{game,press}=a;press('开始游戏');press('新建');press(b=>b.label?.includes('作战图鉴'));
+  press('防御塔');press('信号站');press('机制详情 ›');assert.equal(game.codex.tab,'mechanics');
+  assert.equal(game.codex.context.title,'冷却塔');assert.ok(a.texts.some(t=>t.text.includes('机制详情')));
+  press('穿甲');assert.equal(game.codex.context,null);assert.ok(a.texts.some(t=>t.text.includes('不会忽略护盾')));
+  press('防御塔');assert.equal(game.codex.type,'signal');press('怪物图鉴');press('机制详情 ›');
+  assert.ok(game.codex.context.rows.includes('克制建议：'));press('关闭');assert.equal(game.modal,null);
+});
+
+test('research tree previews without spending, prevents skipped tiers and locks the unchosen branch',()=>{
+  const a=boot(),{game,press}=a;press('开始游戏');press('新建');game.progress.stars.fill(3);
+  press(b=>b.label?.includes('作战图鉴'));press('技能研究');
+  const before=JSON.stringify(game.progress.skills);press('连爆 L4 · 8★');
+  assert.equal(JSON.stringify(game.progress.skills),before);assert.ok(game.buttons.find(b=>b.label==='请先研究上一等级').disabled);
+  press('L2 · 3★');press('强化至 L2 · 3★');press('连爆 · 5★');
+  press(b=>b.label?.startsWith('进化为'));
+  assert.equal(game.progress.skills.upgrades.strike.branch,1);assert.equal(game.progress.skills.upgrades.strike.level,3);
+  assert.ok(game.buttons.filter(b=>b.label?.startsWith('× 重击')).every(b=>b.disabled));
+  press('× 重击 · 5★');assert.equal(game.progress.skills.upgrades.strike.branch,1);
+  press('重配研究 · 全额返星');assert.equal(game.progress.skills.upgrades.strike.level,1);
+  assert.ok(game.buttons.filter(b=>b.label?.includes('重击')||b.label?.includes('连爆')).every(b=>!b.disabled));
+});
+
+test('codex pointer flow buys an evolution, previews its effects, equips two skills and binds Q/E',()=>{
+  const a=boot(),{game,press}=a;press('开始游戏');press('新建');game.progress.stars.fill(3);
+  press(b=>b.label?.includes('作战图鉴'));assert.equal(game.modal,'codex');press('技能研究');press('电磁静默 L1');
+  press('强化至 L2 · 3★');press(b=>b.label?.includes('长静默'));assert.ok(a.texts.some(t=>t.text.includes('5→8秒')));
+  press('进化为长静默 · 5★');press('装入 Q 槽');assert.equal(game.progress.skills.loadout[0],'emp');
+  press('抢修补给 L1');press('装入 E 槽');press('关闭');assert.equal(game.modal,null);
+  press(b=>b.levelIndex===0);assert.ok(a.texts.some(t=>t.text.includes('电磁静默')&&t.text.includes('抢修补给')));
+  press('开始战斗');a.key('q');assert.equal(game.skill,'emp');a.key('e');assert.equal(game.skill,'repair');
+  a.key('Escape');a.key('Escape');press('作战图鉴');press('技能研究');press('电磁静默 L3');
+  assert.ok(game.buttons.find(b=>b.label?.includes('强化至 L4')).disabled,'battle research is read-only');
+  a.key('Escape');assert.equal(game.modal,'battleMenu');
+});
 
 test('web opens home, dated saves, atlas and brief before battle, and exits without erasing progress',()=>{
   const a=boot(),{game,press}=a;
@@ -79,7 +129,7 @@ test('all screen controls fit desktop, tablet, narrow and ultrawide browser wind
     bounds();a.press('开始游戏');bounds();a.press('新建');bounds();
     for(let i=0;i<6;i++){game.selectChapter(i);a.draw();bounds();}
     game.selectChapter(0);a.draw();a.press(b=>b.levelIndex===0);bounds();
-    a.press('进化研究');bounds();a.press('关闭');a.press('开始战斗');bounds();
+    a.press('炮塔图鉴');bounds();a.press('怪物图鉴');bounds();a.press('技能研究');bounds();a.press('关闭');a.press('开始战斗');bounds();
     const header=game.buttons.filter(b=>b.y<100);
     for(let i=0;i<header.length;i++)for(const b of header.slice(i+1)){
       const c=header[i];assert.ok(c.x+c.w<=b.x||b.x+b.w<=c.x||c.y+c.h<=b.y||b.y+b.h<=c.y,'overlapping header');
@@ -128,16 +178,21 @@ test('fullscreen can enter and exit, and unavailable or rejected requests show a
   a.canvas.requestFullscreen=async()=>{throw Error('denied');};await Platform.toggleFullscreen();assert.match(a.game.message,/无法进入全屏/);
 });
 
-test('web keeps the established map geometry and tower art while traffic rules evolve independently',()=>{
+test('web retains its atlas and tower art while roads, convoy rules and difficulty evolve independently',()=>{
   const a=boot(),noop=()=>{},ctx=new Proxy({},{get:()=>noop});
   const Platform={touch:true,canvas:{getContext:()=>ctx},storage:{getItem:()=>null},initialize:noop,bindInput:noop};
   const sandbox={console,wx:{},module:{exports:{}},requestAnimationFrame:noop,require:()=>({createPlatform:()=>Platform})};
   vm.createContext(sandbox);
   const phone=vm.runInContext(fs.readFileSync(path.join(root,'wechat/game.bundle.js'),'utf8')+'\n'+exportsCode,sandbox);
-  for(const key of ['MAP','LEVELS','CHAPTERS','TOWERS','EVOLUTIONS','ROAD_TYPES','SKILLS']){
+  for(const key of ['MAP','CHAPTERS','ROAD_TYPES']){
     assert.equal(JSON.stringify(a[key]),JSON.stringify(phone[key]),key);
   }
   assert.ok(a.CONFIG.enemyHealthMultiplier>phone.CONFIG.enemyHealthMultiplier);
+  assert.ok(a.CONFIG.roadWidth>phone.CONFIG.roadWidth*2);
+  assert.equal(a.LEVELS.length,48);
+  for(let i=0;i<48;i++)for(const key of ['id','theme','chapter','stage','mission'])assert.equal(a.LEVELS[i][key],phone.LEVELS[i][key]);
   assert.ok(a.CONFIG.bossHealthMultiplier>phone.CONFIG.bossHealthMultiplier);
   assert.ok(a.ENEMIES.demolisher.bridgeDamage>0&&a.ENEMIES.raider.busDamage>0);
+  for(const type of Object.keys(a.TOWERS))for(const key of ['name','cost','range','color','glyph'])assert.equal(a.TOWERS[type][key],phone.TOWERS[type][key]);
+  assert.equal(Object.keys(a.SKILLS).length,6);
 });

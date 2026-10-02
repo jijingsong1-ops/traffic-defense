@@ -61,25 +61,33 @@ const Renderer = {
       if (kind % 2) this.box(x+7, y-lift+7, 14, 18, "#557581", "#bfd2ce", 1);
     }
   },
+  laneMarkings(road,color) {
+    for(const [a,b] of road.edges){
+      const length=Collision.distance(a,b),dx=(b.x-a.x)/length,dy=(b.y-a.y)/length;
+      if(length<24)continue;
+      for(const offset of [-CONFIG.laneWidth,0,CONFIG.laneWidth])
+        this.line([[a.x+dx*10-dy*offset,a.y+dy*10+dx*offset],[b.x-dx*10-dy*offset,b.y-dy*10+dx*offset]],color,1,[6,10]);
+    }
+  },
   road(road, mini = false, chapter = null) {
     ctx.save();
     const edges = (width, color, dash=[]) => { for (const [a,b] of road.edges) this.line([[a.x,a.y],[b.x,b.y]],color,width,dash); };
     if(chapter&&chapter.theme!=="city") {
       const sea=chapter.theme==="sea";
       edges(CONFIG.roadWidth+14,sea?"#77b4be":"#786f50");edges(CONFIG.roadWidth+9,sea?"#568a9f":"#d4ba83");
-      edges(CONFIG.roadWidth,chapter.road);edges(2,sea?"#c5e2d6":"#dccaa0",[5,12]);
+      edges(CONFIG.roadWidth,chapter.road);this.laneMarkings(road,sea?"#c5e2d6":"#dccaa0");
       ctx.restore();return;
     }
     edges(CONFIG.roadWidth+24,"#718c83"); edges(CONFIG.roadWidth+19,"#d2d1b7");
     edges(CONFIG.roadWidth+7,"#79877e"); edges(CONFIG.roadWidth+2,"#64747a"); edges(CONFIG.roadWidth-4,"#596c73");
-    edges(1.5,"#dedbbb",[9,14]);
+    this.laneMarkings(road,"#dedbbb");
     if (!mini) for (const [a,b] of road.edges) {
       const length=Collision.distance(a,b), angle=Math.atan2(b.y-a.y,b.x-a.x);
       ctx.save(); ctx.translate((a.x+b.x)/2,(a.y+b.y)/2); ctx.rotate(angle);
-      this.line([[-5,-5],[2,0],[-5,5]],"#e4e5cf",2);
+      for(let lane=0;lane<4;lane++){const y=Lanes.offset(lane);this.line([[-5,y-3],[2,y],[-5,y+3]],"#e4e5cf",1.3);}
       if(length>135) {
         ctx.translate(-length*0.29,0);
-        for(let x=-12;x<14;x+=5) this.box(x,-15,3,30,"#e8e7d0",null,0);
+        for(let x=-12;x<14;x+=5) this.box(x,-CONFIG.roadWidth/2+4,3,CONFIG.roadWidth-8,"#e8e7d0",null,0);
       }
       ctx.restore();
     }
@@ -461,7 +469,7 @@ const Renderer = {
     const tower=game.selected&&game.towerPopupRect&&Collision.inside(game.pointer,game.towerPopupRect)
       ? game.selected : game.pickTower(game.pointer)||game.selected;
     if(tower)this.range(tower,tower.stats.range,tower.spec.color);
-    if(game.skill&&Collision.inside(game.pointer,MAP))this.range(game.pointer,SKILLS[game.skill].radius,SKILLS[game.skill].color);
+    if(game.skill&&Collision.inside(game.pointer,MAP))this.range(game.pointer,game.skillSpecs[game.skill].radius,game.skillSpecs[game.skill].color);
     game.towers.filter(t=>t.type==="depot").forEach(t=>{
       if(t===tower||t===game.rallyTower){this.line([[t.x,t.y],[t.rally.x,t.rally.y]],t.spec.color,1,[4,5]);this.flag(t.rally.x,t.rally.y,t.spec.color);}
       const training=t.soldiers.filter(s=>!s.alive);

@@ -15,6 +15,32 @@ class Game {
   }
   get unlocked() { return Progress.unlocked(this.progress); }
   get completed() { return this.progress.stars.filter(value=>value>0).length; }
+  openCodex(tab="towers",back=null) {
+    this.codex={tab,chapter:this.screen==="battle"?this.level.chapter:this.menuChapter,type:"rail",enemy:null,skill:"strike",branch:0,rank:4,page:0,detailPage:0,mechanism:0};
+    this.codexReturn=back;this.modal="codex";this.buttons=[];
+  }
+  saveResearch() {
+    this.saveFailed=!Progress.save(this.progress,this.activeSlot);
+    if(!this.saveFailed)this.hasSave=true;
+    this.notify(this.saveFailed?"保存失败，当前选择暂留在本次游戏中。":"星星研究与出战技能已保存。");
+  }
+  equipSkill(type,slot) {
+    if(this.screen!=="menu"||!SKILL_ORDER.includes(type)||![0,1].includes(slot))return false;
+    const deck=this.progress.skills.loadout,other=deck.indexOf(type);
+    if(other===slot)return false;
+    if(other>=0)deck[other]=deck[slot];deck[slot]=type;this.saveResearch();return true;
+  }
+  upgradeSkill(type,branch=null) {
+    if(this.screen!=="menu"||!SKILL_ORDER.includes(type))return false;
+    const current=this.progress.skills.upgrades[type],next=current.level+1;
+    if(next>4||next===3&&![0,1].includes(branch)||next!==3&&branch!==null||SkillBook.available(this.progress)<SKILL_UPGRADE_COSTS[next])return false;
+    current.level=next;if(next===3)current.branch=branch;this.saveResearch();return true;
+  }
+  resetSkills() {
+    if(this.screen!=="menu")return false;
+    const deck=[...this.progress.skills.loadout];this.progress.skills=SkillBook.blank();this.progress.skills.loadout=deck;
+    this.saveResearch();return true;
+  }
   newCampaign(confirmed = false) {
     if (!confirmed) { this.saveMode="new"; this.modal="saveSlots"; this.buttons=[]; return; }
     if (!Number.isInteger(this.pendingSlot)||this.pendingSlot<0||this.pendingSlot>=3)return false;
@@ -41,7 +67,7 @@ class Game {
   }
   openLevel(index) {
     if (this.screen !== "menu" || !Number.isInteger(index) || !LEVELS[index]) return;
-    this.menuLevel = index; this.modal = "level"; this.buttons = [];
+    this.menuLevel = index; this.modal = "level"; this.buttons = [];this.intelEntry=null;this.intelPage=0;
   }
   towerUnlocked(type) { return Object.prototype.hasOwnProperty.call(TOWERS,type); }
   selectChapter(index) {
@@ -79,11 +105,14 @@ class Game {
     this.screen = "battle"; this.modal = null; this.state = "prepare"; this.buttons = []; this.won = false;
     this.lives = CONFIG.lives; this.gold = this.level.gold; this.wave = 0; this.kills = 0;
     this.towers = []; this.enemies = []; this.projectiles = []; this.effects = []; this.floats = []; this.beams = [];
-    this.spawnQueue = []; this.spawnTimer = 0; this.spawnIndex = 0;
+    this.spawnQueue = []; this.spawnClock = 0; this.spawnIndex = 0;
     this.prepareTime = CONFIG.firstPreparation; this.waveDuration = CONFIG.firstPreparation;
     this.waveGap = CONFIG.waveGapMin; this.lastEarlyReward = 0;
     this.paused = false; this.speed = 1;
-    this.skillCooldowns = { strike: 0, freeze: 0 };
+    // 本局使用开战时的快照；图鉴在战斗中仅可查看，不能重配绕过冷却。
+    this.skillLoadout=[...this.progress.skills.loadout];
+    this.skillSpecs=Object.fromEntries(SKILL_ORDER.map(type=>[type,SkillBook.stats(this.progress.skills,type,this.level)]));
+    this.skillCooldowns=Object.fromEntries(SKILL_ORDER.map(type=>[type,0]));this.skillZones=[];
     Traffic.init(this);
     this.cancel(); this.accumulator = 0;
     this.notify(Platform.touch?"轻触路边预留空地建塔，轻触炮台升级；顶部按钮暂停部署。":"点击道路旁的预留空地，再选择建造塔型。悬停显示金色边线，空格可暂停部署。");
@@ -91,16 +120,7 @@ class Game {
     return true;
   }
   wavePlan(number) {
-    const pool = this.level.pool, available = pool.slice(0, Math.min(pool.length, number + 1));
-    const count = 7 + CONFIG.extraWaveEnemies + number * 2 + (this.level.enemyExtra ?? this.levelIndex * 2);
-    // 支援单位较少，避免治疗链覆盖整支车队；普通单位、分裂单位、支援单位权重为3:2:1。
-    const weighted=available.flatMap(type=>Array(ENEMIES[type].heal?1:ENEMIES[type].split?2:3).fill(type));
-    const result = Array.from({ length: count }, (_, i) => weighted[(i + number - 1) % weighted.length]);
-    // 破拆车从正常入口加入车队，较早出场，让桥前部署和冻结真正有用。
-    if(this.level.mission==="bridge"&&number%2===0)result.splice(2,0,"demolisher");
-    if(this.level.mission==="bridge"&&number>=6&&number%2===0)result.splice(7,0,"demolisher");
-    if (this.level.boss && number === this.level.waves) result.push(this.level.bossType);
-    return result;
+    return Encounters.wave(this.level,number).flatMap(row=>row.members.map(member=>member.type));
   }
   gapAfterWave(count) {
     return Math.min(CONFIG.waveGapMax,CONFIG.waveGapMin+Math.max(0,count-10)*CONFIG.waveGapPerEnemy);
@@ -122,11 +142,11 @@ class Game {
     Traffic.onWave(this);
     // 每一批保存自己的生命倍率；跨波排队时不会被下一波的倍率覆盖。
     const scale=this.level.scale*CONFIG.enemyGrowth**(this.wave-1);
-    const plan=this.wavePlan(this.wave);
-    this.spawnQueue.push(...plan.map(type=>({type,scale,wave:this.wave})));
-    this.spawnTimer=0;
+    const plan=Encounters.wave(this.level,this.wave);
+    this.spawnQueue.push(...plan.flatMap(row=>row.members.map(member=>({...member,scale,wave:this.wave,group:row.id,entry:row.entry,due:row.due}))));
+    this.spawnClock=0;
     // 倒计时在本波最后一辆车实际进入地图后才开始，不能跨波塞满出场队列。
-    this.waveGap=this.gapAfterWave(plan.length);
+    this.waveGap=this.gapAfterWave(this.spawnQueue.length);
     this.prepareTime=this.waveGap;this.waveDuration=this.waveGap;
     this.lastEarlyReward=reward;this.gold+=reward;
     const warning=this.level.boss&&this.wave===this.level.waves?`首领 ${ENEMIES[this.level.bossType].name} 来袭！`:`第 ${this.wave} 波发动！`;
@@ -146,7 +166,7 @@ class Game {
     for (const enemy of this.enemies) {
       // 只有尚未过共同岔口的车辆才换路径，位置、血量、控制状态均保留。
       if (!enemy.dead && enemy.segment === 0 && [0,1].every(i =>
-        enemy.path[i].x === path[i].x && enemy.path[i].y === path[i].y)) enemy.path = path;
+        enemy.path[i].x === path[i].x && enemy.path[i].y === path[i].y)){enemy.path = path;Lanes.sync(enemy);}
     }
     Traffic.onRouteEvent(this);
     return true;
@@ -182,9 +202,10 @@ class Game {
     return true;
   }
   selectSkill(type) {
+    if(this.screen!=="battle"||this.modal||!this.skillLoadout.includes(type))return false;
     if (this.skillCooldowns[type] > 0) { this.notify("技能正在冷却。"); return; }
     this.cancel(); this.skill = type;
-    this.notify(`点击地图施放${SKILLS[type].name}，右键或 Esc 取消。`);
+    this.notify(`点击地图施放${this.skillSpecs[type].name}，右键或 Esc 取消。`);return true;
   }
   upgrade(branch = null) {
     const t = this.selected;
@@ -206,15 +227,9 @@ class Game {
   }
   cast(p) {
     if (!this.skill || this.paused || this.modal || this.screen !== "battle" || this.skillCooldowns[this.skill] > 0) return;
-    const type = this.skill, spec = SKILLS[type];
-    const victims = this.enemies.filter(e => !e.dead && Collision.distance(e, p) <= spec.radius);
-    if (!victims.length) { this.notify("范围内没有敌人，技能未消耗。"); return; }
-    for (const enemy of victims) {
-      if (type === "strike") enemy.hit(145 + this.level.chapter * 55 + (this.level.stage-1)*14, this, { pierce: true });
-      else enemy.stun(3);
-    }
-    this.effect(p, spec.color, spec.radius); this.skillCooldowns[type] = spec.cooldown; this.skill = null;
-    Sound.play(type);this.notify(`${spec.name}已施放！`);
+    if(!this.skillLoadout.includes(this.skill)||!Collision.inside(p,MAP))return false;
+    const used=SkillActions.cast(this,this.skill,p);
+    if(!used)this.notify("范围内没有适用目标，技能未消耗。");return used;
   }
   click(p, worldOnly = false) {
     const button = !worldOnly && [...this.buttons].reverse().find(b => Collision.inside(p, b));
@@ -269,7 +284,8 @@ class Game {
     if (this.screen !== "battle" || this.paused || this.modal) return;
     this.routeFlash = Math.max(0, this.routeFlash - dt);
     this.messageTime = Math.max(0, this.messageTime - dt);
-    for (const type of Object.keys(SKILLS)) this.skillCooldowns[type] = Math.max(0, this.skillCooldowns[type] - dt);
+    for (const type of Object.keys(this.skillCooldowns)) this.skillCooldowns[type] = Math.max(0, this.skillCooldowns[type] - dt);
+    SkillActions.update(this,dt);
     for (const list of [this.effects, this.floats, this.beams]) list.forEach(e => { e.life -= dt; });
     this.effects = this.effects.filter(e => e.life > 0); this.floats = this.floats.filter(e => e.life > 0); this.beams = this.beams.filter(e => e.life > 0);
     if (this.inspected?.dead) this.inspected = null;
@@ -278,19 +294,7 @@ class Game {
       this.prepareTime=Math.max(0,this.prepareTime-dt);
       if(this.prepareTime===0)this.startWave(true);
     }
-    if (this.state === "wave") {
-      this.spawnTimer -= dt;
-      if (this.spawnQueue.length && this.spawnTimer <= 0) {
-        const batch=this.spawnQueue[0],path=Traffic.path(this,this.spawnIndex);
-        const required=Enemy.bodyLength(ENEMIES[batch.type])/2+CONFIG.trafficGap;
-        const clear=!this.enemies.some(enemy=>!enemy.dead&&Collision.distance(enemy,path[0])<required+enemy.bodyLength/2);
-        if(clear){
-          this.spawnQueue.shift();this.spawnIndex++;
-          this.enemies.push(new Enemy(batch.type,path,batch.scale));
-          this.spawnTimer=CONFIG.spawnInterval;
-        }else this.spawnTimer=.08;
-      }
-    }
+    if (this.state === "wave") Encounters.deploy(this,dt);
     this.towers.filter(t=>t.type==="depot").forEach(t=>t.update(dt,this));
     // 快照保证新分裂的单位从下一帧开始更新，不会提前结束波次。
     for (const enemy of [...this.enemies]) {

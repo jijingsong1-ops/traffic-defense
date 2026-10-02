@@ -18,13 +18,14 @@ Object.assign(Renderer,{
       if(type!=="street")this.line([[a.x,a.y],[b.x,b.y]],road.color+"4d",CONFIG.roadWidth-7);
       if(type==="dirt"||type==="sand")this.line([[a.x,a.y],[b.x,b.y]],"#e8d2a459",3,[2,13]);
       if(type==="bridge"){
-        const span=Traffic.bridgeSpan(path),nx=-(b.y-a.y)/length*22,ny=(b.x-a.x)/length*22;
+        const span=Traffic.bridgeSpan(path),nx=-(b.y-a.y)/length*(CONFIG.roadWidth/2+4),ny=(b.x-a.x)/length*(CONFIG.roadWidth/2+4);
         this.line([[span.a.x,span.a.y],[span.b.x,span.b.y]],"#c9b88d88",CONFIG.roadWidth-4);
         for(const side of [-1,1])this.line([[span.a.x+nx*side,span.a.y+ny*side],[span.b.x+nx*side,span.b.y+ny*side]],"#d9c48d",5);
       }
       if(i===1&&length>70){
         const x=a.x+(b.x-a.x)*.35,y=a.y+(b.y-a.y)*.35;
-        this.speedSign(x,y-27,road);
+        const offset=CONFIG.roadWidth/2+20,sx=x+(b.y-a.y)/length*offset,sy=y-(b.x-a.x)/length*offset;
+        if(!game.sites.some(p=>Collision.distance(p,{x:sx,y:sy})<35))this.speedSign(sx,sy,road);
       }
     }
     if(t.fork){
@@ -42,13 +43,12 @@ Object.assign(Renderer,{
   trafficActors(game) {
     const t=game.traffic,kind=game.level.mission;
     if(kind==="toll")for(const path of game.road.routes){
-      const end=path.at(-1);
-      ctx.save();ctx.translate(end.x-28,end.y);
-      this.box(-12,14,26,17,"#dbc99c","#786c52",3);this.box(-8,16,16,8,"#45666a",null,2);
-      this.line([[-13,-22],[-13,12]],"#776e58",4);this.line([[17,-22],[17,12]],"#776e58",4);
-      this.box(-22,-38,46,18,"#3e7368","#e8d5a3",3);this.text("ETC",1,-29,12,"#fff1c1","bold","center");
-      const y=t.activeTime>0?0:-17;
-      this.line([[-13,12],[15,y]],"#fff0cb",5);this.line([[-7,9],[0,t.activeTime>0?6:-1]],"#c96b4e",5);
+      const end=path.at(-1),previous=path.at(-2),angle=Math.atan2(end.y-previous.y,end.x-previous.x),half=CONFIG.roadWidth/2;
+      ctx.save();ctx.translate(end.x-Math.cos(angle)*28,end.y-Math.sin(angle)*28);ctx.rotate(angle);
+      this.box(-12,half+7,26,17,"#dbc99c","#786c52",3);this.box(-8,half+9,16,8,"#45666a",null,2);
+      this.line([[-13,-half-3],[-13,half+3]],"#776e58",4);
+      this.box(-24,-half-23,48,18,"#3e7368","#e8d5a3",3);this.text("ETC",0,-half-14,12,"#fff1c1","bold","center");
+      if(t.activeTime>0)for(let y=-half;y<half;y+=12)this.line([[0,y],[0,y+7]],"#c96b4e",5);
       ctx.restore();
     }
     if(kind==="bridge"){
@@ -71,17 +71,18 @@ Object.assign(Renderer,{
     if(event){
       const old=(game.previousRoad||game.road).path(0),a=old[1],b=old[2];
       const length=Collision.distance(a,b),x=a.x+(b.x-a.x)*Math.min(.4,60/length),y=a.y+(b.y-a.y)*Math.min(.4,60/length);
+      const half=CONFIG.roadWidth/2;
       ctx.save();ctx.translate(x,y);ctx.rotate(Math.atan2(b.y-a.y,b.x-a.x));
       if(event.kind==="tunnel"){
-        this.box(-12,-26,24,52,"#7f8980","#566961",8);this.box(-15,-17,30,34,"#3d4f4b",null,3);
+        this.box(-12,-half-10,24,CONFIG.roadWidth+20,"#7f8980","#566961",8);this.box(-15,-half,30,CONFIG.roadWidth,"#3d4f4b",null,3);
       }else if(event.kind==="bridge"){
-        this.line([[-23,-23],[23,-23]],"#bba77d",5);this.line([[-23,23],[23,23]],"#bba77d",5);
-        if(game.routeChanged)this.polygon([[-18,-16],[0,-25],[0,25],[-18,16]],"#c8b789","#756b58");
+        this.line([[-23,-half-4],[23,-half-4]],"#bba77d",5);this.line([[-23,half+4],[23,half+4]],"#bba77d",5);
+        if(game.routeChanged)this.polygon([[-18,-half],[0,-half-8],[0,half+8],[-18,half]],"#c8b789","#756b58");
       }else if(event.kind==="construction"){
-        this.line([[-20,-23],[20,-23]],"#d2bc86",6);
-        for(const sx of [-18,18])this.polygon([[sx-4,24],[sx,13],[sx+4,24]],"#c67b4b","#f0d7aa");
+        this.line([[-20,-half-4],[20,-half-4]],"#d2bc86",6);
+        for(const sx of [-18,18])this.polygon([[sx-4,half+9],[sx,half-2],[sx+4,half+9]],"#c67b4b","#f0d7aa");
       }
-      if(game.routeChanged){this.line([[0,-19],[0,19]],"#f8dfab",7);for(let sy=-15;sy<20;sy+=10)this.line([[-3,sy-3],[3,sy+3]],"#b76248",4);}
+      if(game.routeChanged){this.line([[0,-half],[0,half]],"#f8dfab",7);for(let sy=-half+5;sy<half;sy+=10)this.line([[-3,sy-3],[3,sy+3]],"#b76248",4);}
       else if(event.kind==="tidal")this.line([[-14,-4],[0,-4],[-4,-9],[0,-4],[-4,1]],"#d5e8b1",3);
       ctx.restore();
     }

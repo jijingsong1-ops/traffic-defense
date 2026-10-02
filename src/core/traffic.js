@@ -48,7 +48,7 @@ const Traffic = {
     t.branch=index;t.switchCooldown=CONFIG.trafficSwitchCooldown;t.diversionTime=CONFIG.diversionDuration;t.routeMenu=false;t.diversions++;
     const path=this.path(game);
     // 只调度岔口前的敌车；公交走自己的撤离线路，不被敌流信号带走。
-    for(const actor of game.enemies)if(!actor.dead&&actor.segment<t.fork.segment)actor.path=path;
+    for(const actor of game.enemies)if(!actor.dead&&actor.segment<t.fork.segment){actor.path=path;Lanes.sync(actor);}
     Sound.play("gate");game.notify(`${String.fromCharCode(65+t.branch)}${this.branch(index).name}定向放行${CONFIG.diversionDuration}秒，随后恢复自动分路；民车不改道。`);
     return true;
   },
@@ -93,7 +93,7 @@ const Traffic = {
     if(actor.path.trafficBranch!==undefined&&actor.segment>=actor.path.forkSegment&&actor.segment<actor.path.mergeSegment)
       factor*=this.branch(actor.path.trafficBranch).speed;
     const a=actor.path[actor.segment],b=actor.path[actor.segment+1],c=actor.path[actor.segment+2];
-    if(a&&b&&c&&Collision.distance(actor,b)<32){
+    if(a&&b&&c&&Collision.distance(actor.center||actor,b)<32){
       const dot=((b.x-a.x)*(c.x-b.x)+(b.y-a.y)*(c.y-b.y))/(Collision.distance(a,b)*Collision.distance(b,c));
       if(dot<.8)factor*=.8;
     }

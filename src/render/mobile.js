@@ -1,6 +1,6 @@
 "use strict";
 
-// 沿用手机版的 16:9 战场；网页版也加载本文件，保证地图和射程完全一致。
+// 沿用手机版来源的 16:9 战场坐标；当前道路与玩法仅在网页版继续演进。
 // 只在启动时变换地图坐标，窗口缩放交给布局镜头，不拉伸车辆和炮台。
 const sourceMap = {...MAP};
 CONFIG.height = 720;
@@ -23,32 +23,44 @@ Object.assign(Renderer, {
   },
   levelModal(game) {
     const index=game.menuLevel,level=LEVELS[index],chapter=CHAPTERS[level.chapter],locked=index>game.unlocked;
+    const entries=Encounters.entrances(level),entry=game.intelEntry??null,roster=Encounters.roster(level,entry);
     this.sheet(game,`${stageLabel(index)} · ${level.name}`,()=>{game.modal=null;});
-    const preview={x:105,y:182,w:520,h:302},reservedRoad=new RoadNetwork(level,true);
-    this.box(preview.x,preview.y,preview.w,preview.h,chapter.terrain,"#8caa91",14);
-    ctx.save();ctx.beginPath();ctx.roundRect(preview.x,preview.y,preview.w,preview.h,14);ctx.clip();
+    this.button(game,{x:105,y:176,w:120,h:40},"全关敌情",()=>{game.intelEntry=null;game.intelPage=0;},{active:entry===null,size:20});
+    entries.forEach((e,i)=>this.button(game,{x:237+i*145,y:176,w:135,h:40},`${String.fromCharCode(65+i)} · ${ENEMY_PROFILES[e.profile].name}`,()=>{game.intelEntry=i;game.intelPage=0;},{active:entry===i,size:17}));
+    this.text(`主队 ${roster.total} 辆 / ${roster.groups} 组`,1160,197,20,COLORS.gold,"bold","right");
+    const preview={x:105,y:234,w:510,h:240},reservedRoad=new RoadNetwork(level,true);
+    this.box(preview.x,preview.y,preview.w,preview.h,chapter.terrain,"#8caa91",12);
+    ctx.save();ctx.beginPath();ctx.roundRect(preview.x,preview.y,preview.w,preview.h,12);ctx.clip();
     ctx.translate(preview.x,preview.y);ctx.scale(preview.w/MAP.w,preview.h/MAP.h);ctx.translate(-MAP.x,-MAP.y);
     AtlasArt.scenery(MAP,chapter.theme,level.stage,p=>reservedRoad.isRoad(p,55));
     if(level.routeEvent)for(const [a,b] of new RoadNetwork({routes:level.routeEvent.routes}).edges)this.line([[a.x,a.y],[b.x,b.y]],"#ffe8a9",6,[10,12]);
     this.road(new RoadNetwork(level),true,chapter);
-    for(const route of level.routes){const a=route[0],b=route.at(-1);this.circle(...a,15,"#e49867");this.circle(...b,15,"#daebae");}
+    for(const route of level.routes)this.circle(...route.at(-1),17,"#daebae");
+    entries.forEach(e=>{this.circle(...e.point,24,entry===null||entry===e.id?"#b36945":"#aca38d");this.text(String.fromCharCode(65+e.id),e.point[0],e.point[1],28,"#fff4d3","bold","center");});
     ctx.restore();
-    this.text(`${level.layout} · ${level.waves} 波 · ${level.gold} G`,106,513,22,COLORS.gold,"bold");
-    this.text(`${Traffic.mission(level).name}${level.boss?` · ${ENEMIES[level.bossType].name}`:""}`,106,547,20,COLORS.ink);
-    this.text(level.routeEvent?`第 ${level.routeEvent.wave} 波：${level.routeEvent.name}`:"橙色入口 → 绿色终点",106,579,20,COLORS.muted);
-    this.text("出战塔组",672,193,26,COLORS.ink,"bold");
-    game.getDeck().forEach((type,i)=>{
-      const spec=TOWERS[type],x=674+i*117;
-      this.box(x,232,106,126,"#d3c69e",spec.color,12);
-      // 图示和名称拥有独立区域，设施底部的等级牌不能压住名称。
-      ctx.save();ctx.translate(x+53,283);ctx.scale(.82,.82);this.tower({type,theme:level.theme,x:0,y:0,level:1,branch:null});ctx.restore();
-      this.text(spec.name,x+53,338,19,spec.color,"bold","center");
+    this.text(`${level.waves} 波 · ${level.gold}G · 四车道 · ${entries.length} 个出车口`,106,499,21,COLORS.gold,"bold");
+    this.text(entry===null?Traffic.mission(level).brief:`${entries[entry].name}：${ENEMY_PROFILES[entries[entry].profile].tip}`,106,529,18,COLORS.ink);
+    const counts={...roster.counts};if(roster.ambush)counts.raider=(counts.raider||0)+roster.ambush;
+    const keys=[...new Set([...Object.keys(counts),...Object.keys(roster.splits)])],pages=Math.ceil(keys.length/8);
+    game.intelPage=Math.min(game.intelPage||0,pages-1);
+    keys.slice(game.intelPage*8,game.intelPage*8+8).forEach((key,i)=>{
+      const x=640+i%2*270,y=234+Math.floor(i/2)*65,spec=ENEMIES[key];
+      this.box(x,y,258,57,"#e3d2aa",COLORS.border,6);this.vehicle(key,x+25,y+28);
+      this.text(spec.name,x+48,y+18,18,COLORS.ink,"bold");
+      const suffix=roster.splits[key]?` +${roster.splits[key]}分裂`:"";
+      this.text(`${counts[key]||0} 辆${key==='raider'&&roster.ambush?'（伏击）':suffix} · 甲${Math.round((spec.armor||0)*100)}% / 抗${Math.round((spec.magicResist||0)*100)}%`,x+48,y+42,14,COLORS.muted);
     });
-    this.text(`最好成绩  ${"★".repeat(game.progress.stars[index])+"☆".repeat(3-game.progress.stars[index])}`,672,399,23,COLORS.gold,"bold");
-    this.text(Traffic.mission(level).brief,672,437,17,COLORS.muted);
-    this.button(game,{x:672,y:476,w:222,h:61},"进化研究",()=>{game.modal="loadout";game.libraryChapter=level.chapter;},{size:23});
-    this.button(game,{x:906,y:476,w:222,h:61},"敌情档案",()=>{game.modal="intel";game.intelChapter=level.chapter;},{size:23});
-    this.button(game,{x:672,y:555,w:456,h:76},locked?`通关 ${stageLabel(index-1)} 后解锁`:"开始战斗",()=>game.startLevel(index),{primary:!locked,disabled:locked,color:COLORS.gold,size:29});
+    this.text(roster.ambush?"另有站点伏击8辆；分裂为增援上限":"分裂数量为全部击破的增援上限",642,510,15,COLORS.muted);
+    this.button(game,{x:982,y:496,w:55,h:34},"‹",()=>game.intelPage--,{disabled:game.intelPage===0,size:20});
+    this.text(`${game.intelPage+1}/${pages}`,1065,513,17,COLORS.muted,"normal","center");
+    this.button(game,{x:1100,y:496,w:65,h:34},"›",()=>game.intelPage++,{disabled:game.intelPage===pages-1,size:20});
+    this.text(level.routeEvent?`第${level.routeEvent.wave}波：${level.routeEvent.name}`:`${level.layout} · 首领${level.boss?'出战':'无'}`,106,557,16,COLORS.muted);
+    this.button(game,{x:105,y:583,w:144,h:48},"炮塔图鉴",()=>game.openCodex("towers","level"),{size:21});
+    this.button(game,{x:261,y:583,w:144,h:48},"怪物图鉴",()=>game.openCodex("enemies","level"),{size:21});
+    this.button(game,{x:417,y:583,w:144,h:48},"出战技能",()=>game.openCodex("skills","level"),{size:21});
+    this.text(game.progress.skills.loadout.map((key,i)=>`${i?"E":"Q"} ${SKILLS[key].name}`).join(" / "),106,652,16,COLORS.ink);
+    this.button(game,{x:670,y:563,w:495,h:68},locked?`通关 ${stageLabel(index-1)} 后解锁`:"开始战斗",()=>game.startLevel(index),{primary:!locked,disabled:locked,color:COLORS.gold,size:29});
+    this.text(`固定四塔出战 · 最好 ${"★".repeat(game.progress.stars[index])+"☆".repeat(3-game.progress.stars[index])}`,670,652,16,COLORS.muted);
   },
   sheet(game,title,close) {
     this.box(70,72,1140,598,"#eddfb9","#957b53",22);
@@ -63,6 +75,11 @@ Object.assign(Renderer, {
       const entry=route[0],end=route.at(-1);
       this.circle(entry.x,entry.y,16,"#ac684c");this.text("»",entry.x,entry.y,24,"#fff3c8","bold","center");
       this.circle(end.x,end.y,19,"#4d765f");this.flag(end.x,end.y,"#f5dd99");
+    }
+    for(const entry of Encounters.entrances(game.level)){
+      const [x,y]=entry.point,profile=ENEMY_PROFILES[entry.profile];
+      this.box(x-30,y-61,110,28,"#ead6ae",COLORS.border,5);
+      this.text(`${String.fromCharCode(65+entry.id)} · ${profile.name}`,x+25,y-47,12,COLORS.ink,"bold","center");
     }
   },
   field(game) {
@@ -132,7 +149,7 @@ Object.assign(Renderer, {
     }
     if(game.modal==="battleMenu"){
       this.sheet(game,"战斗已暂停",()=>{game.modal=null;});
-      [ ["继续战斗",()=>{game.modal=null;}],["重新挑战",()=>{game.modal="restart";}],["返回章节地图",()=>{game.modal="leave";}],["敌情档案",()=>{game.intelChapter=game.level.chapter;game.modal="intel";}] ].forEach(([label,action],i)=>this.button(game,{x:390,y:187+i*87,w:500,h:73},label,action,{primary:i===0,size:28}));this.audioButtons(game,496,552);return;
+      [ ["继续战斗",()=>{game.modal=null;}],["重新挑战",()=>{game.modal="restart";}],["返回章节地图",()=>{game.modal="leave";}],["作战图鉴",()=>game.openCodex("enemies","battleMenu")] ].forEach(([label,action],i)=>this.button(game,{x:390,y:187+i*87,w:500,h:73},label,action,{primary:i===0,size:28}));this.audioButtons(game,496,552);return;
     }
     const fresh=game.modal==="newCampaign",restart=game.modal==="restart";
     this.box(268,190,744,340,"#eedfbb","#9a835a",22);
@@ -177,7 +194,7 @@ Object.assign(Renderer, {
     if(!t||game.screen!=="battle"||game.rallyTower)return;
     const rect=this.touchPanel(game,`${t.name} · L${t.level}`,392),x=rect.x,y=rect.y;
     game.towerPopupRect=rect;
-    this.text(`伤害 ${Math.round(t.stats.damage)} · 射程 ${t.stats.range}`,x+22,y+87,19,COLORS.muted);
+    this.text(`${CombatRules.typeName(t.stats.damageType)} ${Math.round(t.stats.damage)} · ${(1/t.stats.cooldown).toFixed(2)}次/秒 · 射程 ${t.stats.range}`,x+22,y+87,19,COLORS.muted);
     if(t.level===2){
       t.paths.forEach((path,i)=>{
         const bx=x+16+i*252,unlocked=game.branchUnlocked(t.type,t.theme,i),afford=game.gold>=path.cost;

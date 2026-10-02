@@ -38,6 +38,10 @@ class RoadNetwork {
 function planConstructionSites(level) {
   // 为所有可能的道路预留空间，变道后既不吞塔，也不改变地块编号。
   const road = new RoadNetwork(level, true), sites = [];
+  const add=p=>{
+    if(p.x<MAP.x+36||p.x>MAP.x+MAP.w-42||p.y<MAP.y+79||p.y>MAP.y+MAP.h-49||road.isRoad(p,CONFIG.towerRadius+7))return;
+    if(!sites.some(other=>Collision.distance(p,other)<CONFIG.spacing))sites.push(p);
+  };
   for (const [a, b] of road.edges) {
     const length = Collision.distance(a, b), steps = Math.max(1, Math.floor(length / CONFIG.spacing));
     const nx = -(b.y - a.y) / length, ny = (b.x - a.x) / length;
@@ -45,10 +49,12 @@ function planConstructionSites(level) {
       const fraction = (step + 0.5) / steps;
       const p = { x: Math.round(a.x + (b.x - a.x) * fraction + nx * CONFIG.siteRoadOffset * side),
         y: Math.round(a.y + (b.y - a.y) * fraction + ny * CONFIG.siteRoadOffset * side) };
-      if (p.x < MAP.x+36 || p.x > MAP.x+MAP.w-42 || p.y < MAP.y+79 || p.y > MAP.y+MAP.h-49 || road.isRoad(p, CONFIG.towerRadius + 7)) continue;
-      if (sites.some(other => Collision.distance(p, other) < CONFIG.spacing)) continue;
-      sites.push(p);
+      add(p);
     }
+  }
+  // 四车道拓宽后补足外弯的可用路肩，仍严格避开新旧道路和现有地块。
+  for(const node of road.nodes.values())for(let i=0;i<16;i++){
+    const angle=i*Math.PI/8;add({x:Math.round(node.x+Math.cos(angle)*CONFIG.siteRoadOffset),y:Math.round(node.y+Math.sin(angle)*CONFIG.siteRoadOffset)});
   }
   return sites.map(({x, y}) => [x, y]);
 }

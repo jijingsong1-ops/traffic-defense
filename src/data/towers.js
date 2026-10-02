@@ -3,21 +3,21 @@
 const TOWERS = {
   rail: {
     name: "路卫塔", cost: 80, damage: 22, range: 125, cooldown: .58,
-    focus: true, focusGain: .08, color: "#7de0cb", glyph: "磁",
+    damageType:"physical", growth:1.45, focus: true, focusGain: .08, color: "#7de0cb", glyph: "磁",
     note: "测速锁定 / 动能拦截"
   },
   signal: {
     name: "信号站", cost: 125, damage: 18, range: 108, cooldown: 1.3,
-    pierce: true, slow: .75, duration: 1.4, color: "#8fc8fa", glyph: "讯",
+    damageType:"magic", growth:1.35, slow: .75, duration: 1.4, color: "#8fc8fa", glyph: "讯",
     note: "红灯脉冲 / 干扰制动"
   },
   missile: {
     name: "清障台", cost: 145, damage: 58, range: 132, cooldown: 1.9,
-    splash: 58, slow: .85, duration: .7, color: "#f5bb79", glyph: "锚", note: "抛射制动锚 / 区域清障"
+    damageType:"physical", growth:1.55, splash: 58, slow: .85, duration: .7, color: "#f5bb79", glyph: "锚", note: "抛射制动锚 / 区域清障"
   },
   depot: {
     name: "勤务站", cost: 110, damage: 13, range: 125, cooldown: .8,
-    soldierCount: 3, soldierHealth: 105, soldierArmor: .12, respawn: 8, rallyRange: 125,
+    damageType:"physical", growth:1.3, soldierCount: 3, soldierHealth: 105, soldierArmor: .12, respawn: 8, rallyRange: 125,
     color: "#f1a7a2", glyph: "勤", note: "派遣拦截队 / 道路驻守"
   }
 };
@@ -62,6 +62,14 @@ const EVOLUTIONS = {
   }
 };
 const TOWER_ORDER=Object.keys(TOWERS);
+// 四级的伤害/攻速成长由分支分别决定；进化机制与二级基础成长分离。
+const FINAL_GROWTH={rail:[{damage:1.5,rate:1},{damage:1.15,rate:.8}],signal:[{damage:1.25,rate:.92},{damage:1.4,rate:.94}],missile:[{damage:1.55,rate:1.05},{damage:1.2,rate:.88}],depot:[{damage:1.15,rate:.95},{damage:1.35,rate:.85}]};
+for(const [theme,types] of Object.entries(EVOLUTIONS))for(const type of Object.keys(types))types[type].forEach((path,branch)=>{
+  path.finalDamage=FINAL_GROWTH[type][branch].damage;path.finalRate=FINAL_GROWTH[type][branch].rate;
+  if(type==="rail"&&branch===0&&!path.multi){path.lineHits=3;path.note+=" · 贯穿3车";}
+  if((type==="rail"||type==="depot")&&branch===1){path.healBlock=3;path.note+=" · 禁疗3秒";}
+  if(type==="signal"&&branch===1){path.silence=1.2;path.note+=" · 短暂静默";}
+});
 const pathsFor=(type,theme)=>EVOLUTIONS[theme]?.[type]||EVOLUTIONS.city[type];
 function evolutionRequirement(type,theme,branch) {
   const chapter=CHAPTERS.findIndex(c=>c.theme===theme),order=TOWER_ORDER.indexOf(type);

@@ -101,7 +101,7 @@ Object.assign(Renderer,{
     this.line([[0,l.footer],[l.w,l.footer]],"#a58b60",2);
     this.button(game,{x:l.left,y:l.footer+16,w:187,h:70},"‹ 上一章",()=>game.selectChapter(game.menuChapter-1),{disabled:game.menuChapter===0,size:24});
     this.button(game,{x:l.right-187,y:l.footer+16,w:187,h:70},"下一章 ›",()=>game.selectChapter(game.menuChapter+1),{disabled:game.menuChapter===5,size:24});
-    this.text(game.saveFailed?"存档未能保存，请检查存储空间":"轻触公路路牌 · 查看作战简报",l.w/2,l.footer+35,22,game.saveFailed?COLORS.red:COLORS.ink,"bold","center");
+    this.button(game,{x:l.w/2-166,y:l.footer+12,w:332,h:48},"作战图鉴 · 塔 / 车 / 技能",()=>game.openCodex(),{size:22});
     CHAPTERS.forEach((_,i)=>this.circle(l.w/2-75+i*30,l.footer+73,6,i===game.menuChapter?"#b35f43":"#b5a27b"));
     AtlasArt.compass(l.right-64,l.footer-79);
   },
@@ -118,9 +118,10 @@ Object.assign(Renderer,{
   },
   toolbar(game,l) {
     this.box(0,l.footer,l.w,l.h-l.footer,"#e6d5aeed",null,0);this.line([[0,l.footer],[l.w,l.footer]],"#9f865c",2);
-    Object.entries(SKILLS).forEach(([type,spec],i)=>{
+    game.skillLoadout.forEach((type,i)=>{
+      const spec=SKILLS[type];
       const remaining=game.skillCooldowns[type];
-      this.button(game,{x:l.left+i*192,y:l.footer+15,w:180,h:72},remaining>0?`${spec.name} ${Math.ceil(remaining)}s`:spec.name,()=>game.selectSkill(type),{active:game.skill===type,disabled:remaining>0,size:23});
+      this.button(game,{x:l.left+i*192,y:l.footer+15,w:180,h:72},remaining>0?`${spec.name} ${Math.ceil(remaining)}s`:spec.name,()=>game.selectSkill(type),{active:game.skill===type,disabled:remaining>0,size:21});
     });
     this.button(game,{x:l.left+389,y:l.footer+15,w:117,h:72},"取消",()=>game.cancel(),{size:24});
     const wave={x:l.right-384,y:l.footer+5,w:384,h:85};

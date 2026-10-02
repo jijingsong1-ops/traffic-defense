@@ -1,7 +1,7 @@
 "use strict";
 
 // 网页层只补充桌面交互，交通图册、关卡坐标与战斗绘制均来自同一套手机界面。
-CONFIG.version="v0.14.0-web";
+CONFIG.version="v0.16.0-web";
 const BrowserView = {
   draw:Renderer.draw, home:Renderer.home, header:Renderer.header,
   fieldWorld:Renderer.fieldWorld, buildPopup:Renderer.buildPopup, text:Renderer.text
