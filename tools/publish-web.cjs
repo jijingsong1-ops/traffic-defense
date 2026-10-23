@@ -4,7 +4,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const {execFileSync} = require('node:child_process');
+const {execFileSync, spawnSync} = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
 const git = (args, cwd = root) => execFileSync('git', args, {cwd, encoding: 'utf8'}).trim();
@@ -13,6 +13,9 @@ const commit = git(['rev-parse', 'HEAD']);
 const remote = git(['remote', 'get-url', 'origin']);
 const authorName = git(['config', 'user.name']);
 const authorEmail = git(['config', 'user.email']);
+// 临时仓库也沿用项目针对该远程配置的代理（包含显式禁用代理的空值）。
+const proxy = spawnSync('git', ['config', '--get-urlmatch', 'http.proxy', remote], {cwd: root, encoding: 'utf8'});
+if (proxy.status !== 0 && proxy.status !== 1) throw Error('无法读取项目网络配置，停止发布。');
 const tempRoot = fs.realpathSync(os.tmpdir());
 const temporary = fs.mkdtempSync(path.join(tempRoot, 'traffic-defense-pages-'));
 
@@ -39,6 +42,7 @@ try {
   git(['config', 'user.name', authorName], site);
   git(['config', 'user.email', authorEmail], site);
   git(['remote', 'add', 'origin', remote], site);
+  if (proxy.status === 0) git(['config', 'http.proxy', proxy.stdout.trim()], site);
   if (git(['ls-remote', '--heads', 'origin', 'gh-pages'], site)) {
     git(['fetch', '--depth=1', 'origin', 'gh-pages'], site);
     git(['reset', '--soft', 'FETCH_HEAD'], site);
