@@ -14,18 +14,24 @@ Object.assign(Renderer, {
     const advanced = level >= 3, branch = tower.branch;
     const firing=Math.max(0,(tower.fireTime||0)/.24);
     const palettes = {
-      city: ["#e1eae5", "#8ca6aa"], country: ["#e2e6cd", "#91a88d"],
-      desert: ["#eedbc0", "#b69f86"], hills: ["#dce3eb", "#8b9dac"],
-      sea: ["#e0eff0", "#7eabb6"], forest: ["#d5e3ce", "#849f89"]
+      city: ["#e9e8d1", "#8da69a"], country: ["#e6e6bf", "#9da981"],
+      desert: ["#efdbb7", "#b6a07d"], hills: ["#dce1d5", "#8b9c91"],
+      sea: ["#dce9df", "#7ca79f"], forest: ["#d5e1bd", "#8ba177"]
     };
     const [shell, shade] = palettes[tower.theme || "city"];
-    const ink = "#304b55", glass = "#284b5d";
+    const ink = "#38564f", glass = "#335d5c";
     const theme=tower.theme||"city", accent=advanced?THEME_EQUIPMENT[theme].colors[branch]:spec.color;
     ctx.save(); ctx.translate(tower.x, tower.y); ctx.globalAlpha = ghost ? .55 : 1;
-    this.oval(3, 18, 29, 12, "#213f4033");
+    this.oval(4, 20, 30, 12, "#213f4019");
+    this.oval(2, 17, 25, 10, "#213f4025");
     this.box(-25, -6, 50, 29, shade, ink, 10);
     this.box(-25, -11, 50, 27, shell, ink, 10);
     this.line([[-19, -5], [-10, -8], [14, -8]], "#ffffffb0", 2);
+    // 同一套设备制造语言：铆钉、磨砂边缘、警示贴。细节不改变设施轮廓或命中范围。
+    for(const dx of [-20,20]){this.circle(dx,8,1.4,ink);this.circle(dx-.35,7.5,.6,"#fff7da");}
+    for(let i=0;i<3;i++)this.line([[-22+i*3,0],[-20+i*3,4]],"#68857430",.8);
+    this.box(9,4,10,4,"#d8b773",null,1);
+    this.line([[11,4],[13,8],[16,4]],"#506658",1);
     this.box(-17, 11, 34, 6, glass, null, 3);
     for (let i = 0; i < level; i++) this.box(-12 + i * 7, 12, 4, 3, accent, null, 1);
     if (level >= 2) {

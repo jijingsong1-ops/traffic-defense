@@ -135,8 +135,11 @@ Object.assign(Renderer,{
     else if(game.screen==="menu")this.menu(game,l);
     else{
       const c=MobileLayout.camera(game,l),chapter=CHAPTERS[game.level.chapter];
-      AtlasArt.scenery({x:0,y:0,w:l.w,h:l.h},chapter.theme,game.level.stage,p=>{
-        const world=MobileLayout.toWorld(game,p);return game.buildRoad.isRoad(world,65)||game.sites.some(site=>Collision.distance(site,world)<65);
+      AtlasArt.scenery({x:0,y:0,w:l.w,h:l.h},chapter.theme,game.level.stage,(p,bounds)=>{
+        const world=MobileLayout.toWorld(game,p),origin=MobileLayout.toWorld(game,bounds);
+        const area={...origin,w:bounds.w/c.scale,h:bounds.h/c.scale};
+        return game.buildRoad.isRoad(world,65)||game.sites.some(site=>WorldOps.overlaps(area,{x:site.x-39,y:site.y-78,w:78,h:112},10))||
+          game.worldOps?.points.some(point=>WorldOps.overlaps(area,WorldOps.bounds(point),12));
       });
       ctx.save();ctx.translate(c.x,c.y);ctx.scale(c.scale,c.scale);this.field(game);ctx.restore();
       this.header(game,l);this.toolbar(game,l);

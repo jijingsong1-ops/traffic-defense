@@ -211,12 +211,12 @@ test('building is a two-step site-first operation and selling frees the same sit
   game.click(site); assert.equal(game.selectBuild('signal'), true);
   assert.equal(game.towers[0].siteId, site.id);
 });
-test('dense construction sites stay close to roads, clear of lanes and other sites, and stable on retry', () => {
+test('fixed construction sites stay close to roads, clear of lanes and other sites, and stable on retry', () => {
   const { LEVELS, RoadNetwork, Collision, CONFIG, MAP, planConstructionSites } = setup();
   for (const level of LEVELS) {
     const road = new RoadNetwork(level, true);
     const sites = level.sites.map(([x,y]) => ({x,y}));
-    assert.ok(sites.length >= 24, `${level.name} has only ${sites.length} sites on four-lane roads`);
+    assert.ok(sites.length >= 10 && sites.length <= 12, `${level.name} needs 10–12 fixed sites, got ${sites.length}`);
     assert.deepEqual(planConstructionSites(level),level.sites);
     for (const [i,site] of sites.entries()) {
       assert.equal(road.isRoad(site, CONFIG.towerRadius + 4), false, `${level.name} site ${i+1} overlaps road`);
@@ -509,15 +509,9 @@ test('rail tracking gains damage on the same vehicle and resets after changing t
 });
 
 test('a tall facility cannot intercept clicks on the center of an empty construction pad', () => {
-  const {game, Tower, LEVELS} = battle();
-  game.progress.stars.fill(3);
-  let rear;
-  for (let index = 0; index < LEVELS.length && !rear; index++) {
-    game.startLevel(index);
-    rear = game.sites.find(a => game.sites.some(b => b !== a && Math.abs(a.x-b.x) <= 24 && b.y-a.y > 26 && b.y-a.y < 75));
-  }
-  assert.ok(rear);
-  const front = game.sites.find(b => b !== rear && Math.abs(rear.x-b.x) <= 24 && b.y-rear.y > 26 && b.y-rear.y < 75);
+  const {game, Tower} = battle();
+  // 紧邻叠放已不再是正式关卡布局，保留人工重叠模型验证点击优先级。
+  const rear=game.sites[0],front={x:rear.x,y:rear.y+60};
   const tower = new Tower('signal', front.x, front.y); tower.level = 4; tower.branch = 0;
   game.towers = [tower]; game.click(rear);
   assert.equal(game.selectedSite, rear); assert.equal(game.selected, null);
@@ -664,8 +658,11 @@ test('projectile visuals survive later upgrades and impact animation cannot dupl
 test('all signal and guard attack animations render and simulation pause freezes recoil and effects',()=>{
   const {game,Tower,Enemy,Renderer,CHAPTERS}=battle();
   for(const chapter of CHAPTERS)for(const type of ['signal','depot'])for(const [level,branch] of [[1,null],[2,null],[3,0],[3,1],[4,0],[4,1]]){
-    const t=new Tower(type,400,390,chapter.theme);t.level=level;t.branch=branch;t.rally={x:410,y:390};game.towers=[t];
-    const enemy=new Enemy('boss',game.road.path(0),100);enemy.x=415;enemy.y=390;game.enemies=[enemy];game.effects=[];game.beams=[];
+    const site=game.sites[0],rally=game.road.nearestPoint(site);
+    const t=new Tower(type,site.x,site.y,chapter.theme);t.level=level;t.branch=branch;t.rally=rally;game.towers=[t];game.enemies=[];
+    // 真实部署到开放道路后再接敌；动画不依赖任意空地上的非法近战坐标。
+    for(let i=0;i<180;i++)t.update(1/60,game);
+    const enemy=new Enemy('boss',game.road.path(0),100);enemy.x=rally.x;enemy.y=rally.y;game.enemies=[enemy];game.effects=[];game.beams=[];
     t.update(.01,game);
     assert.ok(t.fireTime>0);
     game.effects.forEach(e=>Renderer.attackEffect(e));game.beams.forEach(b=>Renderer.attackBeam(b));Renderer.tower(t);t.soldiers.forEach(s=>Renderer.soldier(s));

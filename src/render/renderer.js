@@ -465,13 +465,14 @@ const Renderer = {
     ctx.save();ctx.beginPath();ctx.roundRect(MAP.x,MAP.y,MAP.w,MAP.h,13);ctx.clip();
     this.cityScenery(game);
     this.trafficGround(game);
+    this.siteLinks?.(game);
     game.sites.forEach(site=>this.site(game,site));
     const tower=game.selected&&game.towerPopupRect&&Collision.inside(game.pointer,game.towerPopupRect)
       ? game.selected : game.pickTower(game.pointer)||game.selected;
     if(tower)this.range(tower,tower.stats.range,tower.spec.color);
     if(game.skill&&Collision.inside(game.pointer,MAP))this.range(game.pointer,game.skillSpecs[game.skill].radius,game.skillSpecs[game.skill].color);
     game.towers.filter(t=>t.type==="depot").forEach(t=>{
-      if(t===tower||t===game.rallyTower){this.line([[t.x,t.y],[t.rally.x,t.rally.y]],t.spec.color,1,[4,5]);this.flag(t.rally.x,t.rally.y,t.spec.color);}
+      if(t.rally&&(t===tower||t===game.rallyTower)){this.line([[t.x,t.y],[t.rally.x,t.rally.y]],t.spec.color,1,[4,5]);this.flag(t.rally.x,t.rally.y,t.spec.color);}
       const training=t.soldiers.filter(s=>!s.alive);
       if(training.length)this.text(`补员 ${Math.ceil(Math.min(...training.map(s=>s.respawnRemaining)))}s`,t.x,t.y+45,10,"#314e3d","bold","center");
     });

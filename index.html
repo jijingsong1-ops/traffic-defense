@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="assets/css/game.css">
 </head>
 <body>
-<canvas id="game" width="1280" height="720" tabindex="0" aria-label="路网守卫：从首页选择开始游戏或读取存档，点击章节路牌查看关卡简报。点击空地建造，点击设施升级。空格暂停，1至4建造，Q/E技能，M音乐，F全屏，Esc返回。"></canvas>
+<canvas id="game" width="1280" height="720" tabindex="0" aria-label="路网守卫：从首页选择开始游戏或读取存档，点击章节路牌查看关卡简报。点击固定地块建造，点击设施升级；点击驿站、资源点或机关进行互动。空格暂停，1至4建造，Q/E技能，M音乐，F全屏，Esc返回。"></canvas>
 <!-- 普通 defer 脚本支持直接打开本地文件；依赖按下列顺序加载。 -->
 <script defer src="src/platform/browser.js"></script>
 <script defer src="src/config.js"></script>
@@ -15,7 +15,9 @@
 <script defer src="src/data/towers.js"></script>
 <script defer src="src/data/skills.js"></script>
 <script defer src="src/data/mechanics.js"></script>
+<script defer src="src/data/world-ops.js"></script>
 <script defer src="src/data/levels.js"></script>
+<script defer src="src/data/sites.js"></script>
 <script defer src="src/core/collision.js"></script>
 <script defer src="src/core/storage.js"></script>
 <script defer src="src/data/music.js"></script>
@@ -26,6 +28,7 @@
 <script defer src="src/core/lanes.js"></script>
 <script defer src="src/core/encounters.js"></script>
 <script defer src="src/core/skills.js"></script>
+<script defer src="src/core/world-ops.js"></script>
 <script defer src="src/entities.js"></script>
 <script defer src="src/game.js"></script>
 <script defer src="src/render/renderer.js"></script>
@@ -38,6 +41,8 @@
 <script defer src="src/render/mobile-layout.js"></script>
 <script defer src="src/render/browser.js"></script>
 <script defer src="src/render/codex.js"></script>
+<script defer src="src/render/world-ops.js"></script>
+<script defer src="src/render/ui.js"></script>
 <script defer src="src/main.js"></script>
 </body>
 </html>

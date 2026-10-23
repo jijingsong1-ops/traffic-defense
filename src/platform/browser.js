@@ -41,7 +41,7 @@ const Platform = {
   exitGame() { this.exited=true;Sound.stop();this.game.buttons=[]; },
   bindInput(game,canvas) {
     this.game=game;let gesture=null;
-    const reset=()=>{gesture=null;game.pointer={x:-100,y:-100};game.uiPointer={x:-100,y:-100};};
+    const reset=()=>{gesture=null;game.uiPress=null;game.pointer={x:-100,y:-100};game.uiPointer={x:-100,y:-100};};
     canvas.addEventListener("pointermove",event=>{
       this.point(game,event);
       if(gesture&&Math.hypot(event.clientX-gesture.x,event.clientY-gesture.y)>12)gesture.moved=true;
@@ -52,10 +52,11 @@ const Platform = {
       if(event.isPrimary===false){reset();return;}
       if(event.button!==0)return;
       Sound.unlock();canvas.focus();this.point(game,event);
+      game.uiPress={...game.uiPointer};
       gesture={id:event.pointerId,x:event.clientX,y:event.clientY,moved:false,screen:game.screen,modal:game.modal};
     });
     canvas.addEventListener("pointerup",event=>{
-      const press=gesture;gesture=null;
+      const press=gesture;gesture=null;game.uiPress=null;
       if(!press||event.button!==0||press.id!==event.pointerId||press.moved||press.screen!==game.screen||press.modal!==game.modal)return;
       this.point(game,event);
       if(this.handleTap)this.handleTap(game,game.uiPointer);else game.click(game.uiPointer);
@@ -73,7 +74,7 @@ const Platform = {
         else if(game.modal==="newCampaign")game.modal="saveSlots";
         else if(["loadout","intel"].includes(game.modal)&&game.screen==="menu")game.modal="level";
         else if(game.modal)game.modal=null;
-        else if(game.screen==="battle"&&!game.selected&&!game.selectedSite&&!game.skill&&!game.rallyTower&&!game.traffic?.routeMenu)game.modal="battleMenu";
+        else if(game.screen==="battle"&&!game.selected&&!game.selectedSite&&!game.skill&&!game.item&&!game.rallyTower&&!game.traffic?.routeMenu)game.modal="battleMenu";
         game.cancel();return;
       }
       if(game.screen!=="battle"||game.modal)return;
@@ -91,7 +92,7 @@ const Platform = {
   },
   present(game) {
     const button=game.buttons.find(b=>!b.disabled&&Collision.inside(game.uiPointer||game.pointer,b));
-    const build=game.screen==="battle"&&!game.modal&&(game.siteAt(game.pointer)||game.pickTower(game.pointer));
-    this.canvas.style.cursor=button||build?"pointer":game.skill||game.rallyTower?"crosshair":"default";
+    const build=game.screen==="battle"&&!game.modal&&(game.siteAt(game.pointer)||game.pickTower(game.pointer)||WorldOps.at(game,game.pointer));
+    this.canvas.style.cursor=button||build?"pointer":game.skill||game.item||game.rallyTower?"crosshair":"default";
   }
 };

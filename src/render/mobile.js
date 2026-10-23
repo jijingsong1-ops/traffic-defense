@@ -89,7 +89,7 @@ Object.assign(Renderer, {
       this.box(330,104,620,31,"#e8d4a8ed",null,8);
       this.text(Traffic.eventText(game),640,119,17,"#735638","bold","center");
     }
-    if(game.paused){this.box(444,554,392,38,"#ecd9aded",COLORS.gold,10);this.text("已暂停 · 可布塔升级",640,573,22,COLORS.gold,"bold","center");}
+    // 暂停提示留在控制栏，避免遮住战场底部的固定阵地。
     const boss=game.enemies.find(e=>!e.dead&&e.spec.boss);
     if(boss){this.box(406,143,468,34,"#d2bb93ed",null,8);this.text(boss.spec.name,420,160,18,COLORS.red,"bold");this.box(565,155,293,10,"#6c564a",null,4);this.box(565,155,293*Math.max(0,boss.health/boss.maxHealth),10,COLORS.red,null,4);}
   },

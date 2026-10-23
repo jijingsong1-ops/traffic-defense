@@ -27,7 +27,8 @@ const AtlasArt = {
     }
     for(let n=0;n<(theme==="forest"?64:42);n++){
       const px=x+46+(n*173+seed*57)%Math.max(1,w-92),py=y+55+(n*137+seed*41)%Math.max(1,h-110);
-      if(!blocked({x:px,y:py}))this.landmark(theme,px,py,.8+(n%3)*.16,n);
+      const scale=.8+(n%3)*.16,bounds={x:px-50*scale,y:py-60*scale,w:100*scale,h:110*scale};
+      if(!blocked({x:px,y:py},bounds))this.landmark(theme,px,py,scale,n);
     }
   },
   landmark(theme,x,y,scale=1,variant=0) {

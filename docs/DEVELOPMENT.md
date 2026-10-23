@@ -15,12 +15,15 @@ src/
     mechanics.js           独立机制词条与搭配建议
     enemies.js             敌人属性与图鉴介绍
     levels.js              六章48关、独立路线、变道事件与波次参数
+    sites.js               48关预设固定阵地表（归一化坐标，10～12处/关）
+    world-ops.js           局内商店、机关、资源与悬赏参数/章节主题
     music.js               六章独立旋律、和弦、节拍与音色
   core/
     collision.js           距离、线段和矩形检测
     combat-rules.js         物理/魔法抗性、敌军能力、图鉴机制与反制说明
     skills.js              六技能施放、持续区域、抢修和超频
-    road-network.js        有向路网、道路投影和固定建造地块
+    road-network.js        有向路网、固定点位、开放道路寻路与改道撤离
+    world-ops.js           互动点规划、局内经济、临时单位与悬赏生命周期
     encounters.js          出车口倾向、确定性车组、战前统计与实际出场
     lanes.js               四车道偏移、转角衔接与占道检测
     traffic.js             路况速度、临时分流、站点伏击、桥梁载重与民用车辆
@@ -39,12 +42,17 @@ src/
     mobile-layout.js       全屏布局、安全区域与镜头换算
     browser.js             网页版号、桌面弹窗位置、全屏入口和悬停射程
     codex.js               简洁单位图鉴、机制详情、技能进化树与装备
+    world-ops.js           地图互动设施、商店、工具袋与悬赏提示
+    ui.js                  网页统一视觉主题、布局与即时交互反馈
   platform/browser.js      浏览器窗口、鼠标、快捷键、存储与生命周期
   main.js                  网页画布初始化与首页启动
 assets/css/game.css        页面布局与画布样式
 tests/game.test.cjs        玩法与战役自动化测试
 tests/browser.test.cjs     浏览器输入、图鉴研究、布局、全屏及保留章节/基础造型一致性
 tests/campaign-simulation.cjs 合法经济、目标保护与变道重新布防的通关模拟
+tests/navigation.test.cjs  开放道路、拦截、寻路和改道撤离回归
+tests/sites.test.cjs       48关固定阵地合法性、覆盖率和稳定性
+tests/world-ops.test.cjs   商店经济、资源、机关、援军与挑战状态回归
 tests/fixtures/            冻结微信 v0.13.0 的33文件哈希清单
 docs/
   CHANGELOG.md             版本历史
@@ -62,7 +70,9 @@ v0.15新增技能/克制模块：技能数值只由 `SkillBook.stats()` 生成�
 - 人物大小：`src/config.js` 的 `soldierScale`，当前为 `0.64`。只影响绘制，不改变碰撞、生命或拦截能力；血条独立绘制。
 - 设施数值与解锁：`src/data/towers.js`。城市第一路线按1/2/3/4次通关开放，第二路线按4/5/6/7次；后续章节延续章节研究。
 - 设施外观：`src/render/facilities.js`。基础轮廓、专精模块和四级强化都在 `tower()`，小队员在 `soldier()`。
-- 建造空地：`src/render/renderer.js` 的 `site()` 沿用交通图册地表，使用最近道路确定朝向和连接小径。造塔后仍保留底部地表；悬停/选中仅高亮空地。v0.16将路宽改为80、基座中心距路70、间距50，并沿路口补足合法地块；每关至少24处，排除当前和未来道路。冻结微信地块不改变。
+- 建造空地：`src/data/sites.js` 为48关分别列出10～12个归一化固定点，`planConstructionSites` 仅按MAP换算，不自动增加地块；新增关卡必须提供点位表。`SITE_RULES` 要求间距≥92、高级塔外形占位78×112互不重叠、联防邻位距离≤182。`ConstructionTactics.sharedRoad()` 求两个射程圆与真实道路边的共同区间；`links()` 只使用当前开放路网，空位按108射程预估，已建塔读取实际射程。`ui.js` 绘制有交通用途的低矮路肩基座及选中后的共同射界，不加隐形联防增益。测试检查新旧路线覆盖、全部临路塔位配合、模型间隔及道路切换后的提示失效；逐关记录见 `docs/validation/v0.17.0-sites.json`。
+- 局内互动：`data/world-ops.js` 集中定义价格、库存、时长、范围及章节效果，`WORLD_STAGE_ACTIONS` 为每关选择1～2种互动；`core/world-ops.js` 管理本局状态，分别计算模型与铭牌占位，避让塔位、当前/未来车道及交通标识，铭牌从上下左右四个方位选位。背景装饰通过相机转换后的完整占位避开设施；点击模型或铭牌均可打开详情。普通购买/激活不写永久存档；临时队伍使用真实Tower/Soldier与同一开放道路寻路。新增增益必须独立计时，避免把较强旧效果续时。
+- 队员路径：只用 `game.road`；`buildRoad` 仅预留建筑空间。改道统一调用 `AlliedNavigation.reconcile`，清理拦截与路径缓存；禁止直接把队员坐标改到新集合点。路口连接、道路步行、近战可达与基地出口均由同一套检查处理。
 - 新增关卡：`src/data/levels.js`；道路/建造规则在 `src/core/road-network.js`。
 - 新增效果：先在 `src/entities.js` 实现战斗规则，再在 `towers.js` 配置能力与说明。
 
@@ -77,7 +87,7 @@ v0.15新增技能/克制模块：技能数值只由 `SkillBook.stats()` 生成�
 ## 验证
 
 ```powershell
-node --test tests/game.test.cjs tests/browser.test.cjs
+node --test tests/game.test.cjs tests/browser.test.cjs tests/navigation.test.cjs tests/sites.test.cjs tests/world-ops.test.cjs
 node --test --test-name-pattern="frozen v0.13.0" tests/wechat.test.cjs
 python -m http.server 8765
 ```
@@ -85,6 +95,12 @@ python -m http.server 8765
 最后一条命令仅在需要网页服务时运行，浏览器打开 `http://localhost:8765`。测试读取 `index.html` 的脚本列表，使用与浏览器一致的顺序；包含模拟战斗、合法经济通关、研究门槛、拦截释放、声音、渲染与浏览器事件检查。
 
 Git 上传前运行 `git status`。这次整理包含文件移动，`git add -A` 会同时记录新增路径和旧路径删除；提交后再 push。页面版本不会自动创建 Git 标签。
+
+## GitHub Pages 发布
+
+提交并推送 `main` 后运行 `node tools/publish-web.cjs`。脚本在临时目录中检出当前提交，使用 Node.js 24 运行网页回归与微信 v0.13.0 哈希校验，然后仅保留 `index.html`、`src/` 和 `assets/`，推送到 `gh-pages`。它不执行微信构建脚本，不发布未提交改动，不强制覆盖远程分支；检查失败时不会推送。`version.json` 记录网页版本及源提交，方便核对线上版本。
+
+仓库 Settings → Pages 的 Source 使用 Deploy from a branch，选择 `gh-pages` 和 `/ (root)`。固定地址为 `https://jijingsong1-ops.github.io/traffic-defense/`，入口资源使用相对路径，以兼容仓库子路径。发布使用现有 Git 身份与仓库写权限，不需要创建 workflow 的额外授权，也不需要 AppID、AppSecret 或额外部署密钥。存档属于访问者的浏览器本地存储，不上传 GitHub。
 
 ## 路线与章节音乐
 

@@ -136,7 +136,7 @@ class Enemy {
     const factor = this.slowTime > 0 ? this.slowFactor : 1;
     this.slowTime = Math.max(0, this.slowTime - dt);
     const guard=this.blocker;
-    if(guard && guard.alive && guard.target===this && game.towers.includes(guard.owner) && Collision.distance(this,guard)<35) {
+    if(guard && guard.alive && guard.target===this && !guard.owner.jammedTime && game.towers.includes(guard.owner) && Collision.distance(this,guard)<35 && AlliedNavigation.canStrike(game,guard,this)) {
       this.meleeCooldown=Math.max(0,(this.meleeCooldown||0)-dt);
       if(!stunned&&this.meleeCooldown===0) {
         guard.hit((this.spec.boss?38:this.spec.armor?16:10)*Math.sqrt(this.scale));
@@ -177,6 +177,7 @@ class Tower {
     this.fireTime = 0; this.cooldown = 0; this.angle = -Math.PI / 2; this.invested = TOWERS[type].cost;
     this.targetMode = 0; this.focusTarget = null; this.focusStacks = 0;
     this.jammedTime=0;this.jamGuardTime=0;this.hasteTime=0;this.hastePower=0;
+    this.relayHasteTime=0;this.relayHastePower=0;
   }
   get spec() { return TOWERS[this.type]; }
   get paths() { return pathsFor(this.type,this.theme); }
@@ -209,17 +210,19 @@ class Tower {
   get name() { return this.branch === null ? this.spec.name : this.paths[this.branch].name; }
   get upgradeCost() { return Math.round(this.spec.cost * (this.level === 1 ? 0.75 : 1.2)); }
   get sellValue() { return Math.floor(this.invested * CONFIG.sellRatio); }
+  // 中继与技能分别计时，较弱增益不能延长较强增益的持续时间。
+  get attackSpeed() {return 1+Math.max(this.hasteTime>0?this.hastePower:0,this.relayHasteTime>0?this.relayHastePower:0);}
   update(dt, game) {
     this.fireTime = Math.max(0, this.fireTime - dt);
-    for(const key of ["jammedTime","jamGuardTime","hasteTime"])this[key]=Math.max(0,this[key]-dt);
+    for(const key of ["jammedTime","jamGuardTime","hasteTime","relayHasteTime"])this[key]=Math.max(0,this[key]-dt);
     if(!this.hasteTime)this.hastePower=0;
-    if(this.jammedTime>0)return;
+    if(this.jammedTime>0){this.soldiers.forEach(s=>s.release());return;}
     if(this.type==="depot") {
-      if(!this.rally)this.rally=(game.buildRoad||game.road).nearestPoint(this);
+      if(!this.rally)this.rally=AlliedNavigation.defaultRally(game,this);
       while(this.soldiers.length<this.stats.soldierCount)this.soldiers.push(new Soldier(this,this.soldiers.length));
       this.soldiers.forEach(s=>s.update(dt,game));return;
     }
-    this.cooldown = Math.max(0, this.cooldown - dt*(1+this.hastePower));
+    this.cooldown = Math.max(0, this.cooldown - dt*this.attackSpeed);
     const stats = this.stats;
     if (stats.repair) {
       this.supportTimer = (this.supportTimer || 0) - dt;
@@ -288,23 +291,28 @@ class Soldier {
     if(!this.alive){this.release();this.respawnRemaining=this.owner.stats.respawn;}
   }
   update(dt,game){
+    if(!game.towers.includes(this.owner)||this.owner.jammedTime>0){this.release();return;}
     this.swingTime=Math.max(0,this.swingTime-dt);
     const stats=this.owner.stats,rally=this.owner.rally;
     if(stats.soldierHealth!==this.maxHealth){if(this.alive)this.health+=stats.soldierHealth-this.maxHealth;this.maxHealth=stats.soldierHealth;}
     if(!this.alive){
       this.respawnRemaining=Math.max(0,this.respawnRemaining-dt);
-      if(!this.respawnRemaining){this.health=this.maxHealth;this.x=this.owner.x;this.y=this.owner.y;}
+      if(!this.respawnRemaining){this.health=this.maxHealth;this.x=this.owner.x;this.y=this.owner.y;this.walkRoute=null;this.retreatPath=null;}
       return;
     }
     this.health=Math.min(this.maxHealth,this.health+(stats.soldierRegen||0)*dt);
-    this.cooldown=Math.max(0,this.cooldown-dt*(1+this.owner.hastePower));
-    if(this.target&&(this.target.dead||Collision.distance(this.target,rally)>CONFIG.soldierLeash||(this.target.blocker&&this.target.blocker!==this)))this.release();
+    this.cooldown=Math.max(0,this.cooldown-dt*this.owner.attackSpeed);
+    if(this.retreatPath){this.release();AlliedNavigation.move(this,null,dt,game);return;}
+    if(!rally){this.release();return;}
+    if(this.target&&(this.target.dead||Collision.distance(this.target,rally)>CONFIG.soldierLeash||(this.target.blocker&&this.target.blocker!==this)||!AlliedNavigation.canTarget(game,this.owner,this.target)))this.release();
     if(!this.target)this.target=game.enemies.filter(e=>!e.dead&&!e.blocker&&Collision.distance(e,rally)<=CONFIG.soldierLeash
+      && AlliedNavigation.canTarget(game,this.owner,e)
       && !game.towers.some(t=>t.soldiers.some(s=>s!==this&&s.alive&&s.target===e)))
       .sort((a,b)=>a.remaining-b.remaining)[0]||null;
-    const destination=this.target||{x:rally.x+Math.cos(this.slot*2.4)*12,y:rally.y+Math.sin(this.slot*2.4)*12};
+    const idle={x:rally.x+Math.cos(this.slot*2.4)*12,y:rally.y+Math.sin(this.slot*2.4)*12};
+    const destination=this.target||(game.road.isRoad(idle,-3)?idle:rally);
     const distance=Collision.distance(this,destination);
-    if(this.target&&distance<=CONFIG.soldierCatch){
+    if(this.target&&distance<=CONFIG.soldierCatch&&AlliedNavigation.canStrike(game,this,this.target)){
       this.target.blocker=this;
       if(!this.cooldown){
         const target=this.target;this.angle=Math.atan2(target.y-this.y,target.x-this.x);
@@ -313,7 +321,7 @@ class Soldier {
         applyHit(target,stats.damage,stats,game);this.cooldown=stats.cooldown;
         Sound.play("clash");if(target.dead)this.release();
       }
-    } else if(distance>1){const step=Math.min(distance,CONFIG.soldierSpeed*dt);this.x+=(destination.x-this.x)/distance*step;this.y+=(destination.y-this.y)/distance*step;}
+    } else if(distance>1)AlliedNavigation.move(this,destination,dt,game);
   }
 }
 function applyHit(enemy, damage, stats, game) {

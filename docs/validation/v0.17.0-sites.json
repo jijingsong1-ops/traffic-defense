@@ -1,0 +1,1138 @@
+{
+  "date": "2026-10-22",
+  "version": "v0.17.0",
+  "scope": "48关沿路成组的固定阵地与新旧线路联防验证",
+  "rules": {
+    "minimumSpacing": 92,
+    "modelFootprint": [
+      78,
+      112
+    ],
+    "baseFireRange": 125,
+    "cooperationRange": 108,
+    "partnerDistance": 182,
+    "minimumSharedRoadLength": 32,
+    "roadsideDistance": 92
+  },
+  "summary": {
+    "levels": 48,
+    "sites": 570,
+    "minimumSpacing": 92.72,
+    "minimumRouteCoverage": 0.6256,
+    "minimumDoubleCoverage": 0.1182,
+    "roadsideSites": 642,
+    "pairedSites": 642
+  },
+  "fixedSitesSha256": "be7bbcb4b269a61a5b993eaca6eab81b2fb9afe12c2e0a52bfaee9df136d63bb",
+  "validation": "node --test tests/sites.test.cjs",
+  "levels": [
+    {
+      "id": "city-1",
+      "count": 10,
+      "minimumSpacing": 105.19,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 10,
+          "pairedSites": 10,
+          "routes": [
+            {
+              "baseCoverage": 0.9289,
+              "doubleCoverage": 0.2808
+            },
+            {
+              "baseCoverage": 0.9029,
+              "doubleCoverage": 0.294
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "city-2",
+      "count": 10,
+      "minimumSpacing": 98.08,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 10,
+          "pairedSites": 10,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.2918
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "city-3",
+      "count": 10,
+      "minimumSpacing": 108.07,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 10,
+          "pairedSites": 10,
+          "routes": [
+            {
+              "baseCoverage": 0.848,
+              "doubleCoverage": 0.3731
+            },
+            {
+              "baseCoverage": 0.9669,
+              "doubleCoverage": 0.411
+            },
+            {
+              "baseCoverage": 0.9874,
+              "doubleCoverage": 0.371
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "city-4",
+      "count": 12,
+      "minimumSpacing": 101.08,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.3196
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 0.9945,
+              "doubleCoverage": 0.3245
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "city-5",
+      "count": 12,
+      "minimumSpacing": 93.01,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.997,
+              "doubleCoverage": 0.2246
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "city-6",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.8675,
+              "doubleCoverage": 0.1836
+            },
+            {
+              "baseCoverage": 0.8753,
+              "doubleCoverage": 0.1246
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "city-7",
+      "count": 12,
+      "minimumSpacing": 114.59,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.7425
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.8283
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "city-8",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 8,
+          "pairedSites": 8,
+          "routes": [
+            {
+              "baseCoverage": 0.7717,
+              "doubleCoverage": 0.34
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 0.7796,
+              "doubleCoverage": 0.2564
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "country-1",
+      "count": 12,
+      "minimumSpacing": 108,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.7368,
+              "doubleCoverage": 0.295
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "country-2",
+      "count": 12,
+      "minimumSpacing": 94.05,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9938,
+              "doubleCoverage": 0.3037
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.6163
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.2539
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "country-3",
+      "count": 12,
+      "minimumSpacing": 101.51,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.8614,
+              "doubleCoverage": 0.1195
+            },
+            {
+              "baseCoverage": 0.9015,
+              "doubleCoverage": 0.1189
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "country-4",
+      "count": 12,
+      "minimumSpacing": 94.92,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 8,
+          "pairedSites": 8,
+          "routes": [
+            {
+              "baseCoverage": 0.8358,
+              "doubleCoverage": 0.3096
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 0.8201,
+              "doubleCoverage": 0.3393
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "country-5",
+      "count": 12,
+      "minimumSpacing": 108.68,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.7482
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.724
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "country-6",
+      "count": 12,
+      "minimumSpacing": 93.01,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9826,
+              "doubleCoverage": 0.3827
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "country-7",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.8882,
+              "doubleCoverage": 0.1774
+            },
+            {
+              "baseCoverage": 0.8839,
+              "doubleCoverage": 0.188
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "country-8",
+      "count": 12,
+      "minimumSpacing": 92.91,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 6,
+          "pairedSites": 6,
+          "routes": [
+            {
+              "baseCoverage": 0.8534,
+              "doubleCoverage": 0.1884
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9008,
+              "doubleCoverage": 0.2348
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desert-1",
+      "count": 12,
+      "minimumSpacing": 103,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.6217
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desert-2",
+      "count": 12,
+      "minimumSpacing": 93.09,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9873,
+              "doubleCoverage": 0.3314
+            },
+            {
+              "baseCoverage": 0.9809,
+              "doubleCoverage": 0.2967
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.4826
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desert-3",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9877,
+              "doubleCoverage": 0.2449
+            },
+            {
+              "baseCoverage": 0.9818,
+              "doubleCoverage": 0.2005
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desert-4",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 0.9474,
+              "doubleCoverage": 0.3806
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 0.9447,
+              "doubleCoverage": 0.38
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desert-5",
+      "count": 12,
+      "minimumSpacing": 93.39,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.8789,
+              "doubleCoverage": 0.2588
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desert-6",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.943,
+              "doubleCoverage": 0.1325
+            },
+            {
+              "baseCoverage": 0.9623,
+              "doubleCoverage": 0.2023
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desert-7",
+      "count": 12,
+      "minimumSpacing": 115,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9868,
+              "doubleCoverage": 0.2726
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "desert-8",
+      "count": 12,
+      "minimumSpacing": 93.9,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 8,
+          "pairedSites": 8,
+          "routes": [
+            {
+              "baseCoverage": 0.7472,
+              "doubleCoverage": 0.3184
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 10,
+          "pairedSites": 10,
+          "routes": [
+            {
+              "baseCoverage": 0.6713,
+              "doubleCoverage": 0.2529
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hills-1",
+      "count": 12,
+      "minimumSpacing": 97.87,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.971,
+              "doubleCoverage": 0.3272
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hills-2",
+      "count": 12,
+      "minimumSpacing": 99.2,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.3413
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.3139
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hills-3",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9394,
+              "doubleCoverage": 0.3293
+            },
+            {
+              "baseCoverage": 0.9673,
+              "doubleCoverage": 0.367
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.4814
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hills-4",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 7,
+          "pairedSites": 7,
+          "routes": [
+            {
+              "baseCoverage": 0.7203,
+              "doubleCoverage": 0.3207
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 11,
+          "pairedSites": 11,
+          "routes": [
+            {
+              "baseCoverage": 0.8167,
+              "doubleCoverage": 0.2957
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hills-5",
+      "count": 12,
+      "minimumSpacing": 94.83,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.8541,
+              "doubleCoverage": 0.1188
+            },
+            {
+              "baseCoverage": 0.9275,
+              "doubleCoverage": 0.1851
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hills-6",
+      "count": 12,
+      "minimumSpacing": 115.04,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.4281
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hills-7",
+      "count": 12,
+      "minimumSpacing": 99.04,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9691,
+              "doubleCoverage": 0.1712
+            },
+            {
+              "baseCoverage": 0.8843,
+              "doubleCoverage": 0.1226
+            },
+            {
+              "baseCoverage": 0.889,
+              "doubleCoverage": 0.5963
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hills-8",
+      "count": 12,
+      "minimumSpacing": 95.34,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 8,
+          "pairedSites": 8,
+          "routes": [
+            {
+              "baseCoverage": 0.6256,
+              "doubleCoverage": 0.3506
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 11,
+          "pairedSites": 11,
+          "routes": [
+            {
+              "baseCoverage": 0.6981,
+              "doubleCoverage": 0.3009
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sea-1",
+      "count": 12,
+      "minimumSpacing": 96.88,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9634,
+              "doubleCoverage": 0.3671
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sea-2",
+      "count": 12,
+      "minimumSpacing": 95.02,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9937,
+              "doubleCoverage": 0.249
+            },
+            {
+              "baseCoverage": 0.9938,
+              "doubleCoverage": 0.249
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sea-3",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9058,
+              "doubleCoverage": 0.1413
+            },
+            {
+              "baseCoverage": 0.9005,
+              "doubleCoverage": 0.1852
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sea-4",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 7,
+          "pairedSites": 7,
+          "routes": [
+            {
+              "baseCoverage": 0.7241,
+              "doubleCoverage": 0.357
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 11,
+          "pairedSites": 11,
+          "routes": [
+            {
+              "baseCoverage": 0.8011,
+              "doubleCoverage": 0.3019
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sea-5",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.3761
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sea-6",
+      "count": 12,
+      "minimumSpacing": 102.96,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.4399
+            },
+            {
+              "baseCoverage": 0.9923,
+              "doubleCoverage": 0.4378
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sea-7",
+      "count": 12,
+      "minimumSpacing": 98.6,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9968,
+              "doubleCoverage": 0.3645
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sea-8",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 0.9764,
+              "doubleCoverage": 0.324
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 0.9784,
+              "doubleCoverage": 0.3028
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forest-1",
+      "count": 12,
+      "minimumSpacing": 94.05,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.4562
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forest-2",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9937,
+              "doubleCoverage": 0.2722
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.2778
+            },
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.3369
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forest-3",
+      "count": 12,
+      "minimumSpacing": 108.5,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9606,
+              "doubleCoverage": 0.1598
+            },
+            {
+              "baseCoverage": 0.8809,
+              "doubleCoverage": 0.1182
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forest-4",
+      "count": 12,
+      "minimumSpacing": 92.72,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 9,
+          "pairedSites": 9,
+          "routes": [
+            {
+              "baseCoverage": 0.9695,
+              "doubleCoverage": 0.308
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 10,
+          "pairedSites": 10,
+          "routes": [
+            {
+              "baseCoverage": 0.9896,
+              "doubleCoverage": 0.2921
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forest-5",
+      "count": 12,
+      "minimumSpacing": 99.48,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 0.9376,
+              "doubleCoverage": 0.17
+            },
+            {
+              "baseCoverage": 0.9376,
+              "doubleCoverage": 0.2132
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forest-6",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.5433
+            },
+            {
+              "baseCoverage": 0.9745,
+              "doubleCoverage": 0.4859
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forest-7",
+      "count": 12,
+      "minimumSpacing": 99,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 12,
+          "pairedSites": 12,
+          "routes": [
+            {
+              "baseCoverage": 1,
+              "doubleCoverage": 0.3284
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "forest-8",
+      "count": 12,
+      "minimumSpacing": 96.54,
+      "phases": [
+        {
+          "afterRouteChange": false,
+          "roadsideSites": 7,
+          "pairedSites": 7,
+          "routes": [
+            {
+              "baseCoverage": 0.6698,
+              "doubleCoverage": 0.2747
+            }
+          ]
+        },
+        {
+          "afterRouteChange": true,
+          "roadsideSites": 11,
+          "pairedSites": 11,
+          "routes": [
+            {
+              "baseCoverage": 0.7918,
+              "doubleCoverage": 0.2833
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

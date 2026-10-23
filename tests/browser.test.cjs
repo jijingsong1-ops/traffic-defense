@@ -11,7 +11,7 @@ function boot(width=1366,height=768,saved=new Map()){
   let rect={left:7,top:11,width,height};
   const listeners={canvas:{},window:{},document:{}},frames=[],texts=[],transforms=[];
   const noop=()=>{};
-  const context=new Proxy({fillText:(text,x,y)=>texts.push({text,x,y}),setTransform:(...args)=>transforms.push(args)},
+  const context=new Proxy({fillText:(text,x,y)=>texts.push({text,x,y,font:context.font}),setTransform:(...args)=>transforms.push(args)},
     {get:(o,k)=>k in o?o[k]:noop,set:(o,k,v)=>(o[k]=v,true)});
   const canvas={style:{},focus:noop,getContext:()=>context,getBoundingClientRect:()=>rect,
     addEventListener:(name,fn)=>listeners.canvas[name]=fn,
@@ -24,6 +24,7 @@ function boot(width=1366,height=768,saved=new Map()){
   vm.createContext(sandbox);
   const api=vm.runInContext(source+'\n'+exportsCode,sandbox);
   api.Encounters=vm.runInContext('Encounters',sandbox);
+  Object.assign(api,vm.runInContext('({WorldOps,AtlasArt})',sandbox));
   const draw=()=>{texts.length=0;api.Renderer.draw(api.game);api.Platform.present(api.game);};
   const event=(point,extra={})=>({clientX:rect.left+point.x*api.Platform.viewport.scale,
     clientY:rect.top+point.y*api.Platform.viewport.scale,button:0,pointerId:1,isPrimary:true,...extra});
@@ -195,4 +196,149 @@ test('web retains its atlas and tower art while roads, convoy rules and difficul
   assert.ok(a.ENEMIES.demolisher.bridgeDamage>0&&a.ENEMIES.raider.busDamage>0);
   for(const type of Object.keys(a.TOWERS))for(const key of ['name','cost','range','color','glyph'])assert.equal(a.TOWERS[type][key],phone.TOWERS[type][key]);
   assert.equal(Object.keys(a.SKILLS).length,6);
+});
+
+test('map shop pointer flow shows failed repair feedback, pauses combat and spends a roadblock only on valid placement',()=>{
+  const a=boot(960,540),{game}=a;start(a);
+  a.press(b=>b.label===''&&b.x>850&&b.y>600);a.frame();a.frame();
+  assert.equal(game.wave,1);assert.ok(game.enemies.length>0);
+  const shop=game.worldOps.points.find(p=>p.kind==='shop');
+  a.move(a.MobileLayout.toScreen(game,shop));assert.equal(a.canvas.style.cursor,'pointer');
+  a.tapWorld(shop);assert.equal(game.modal,'worldShop');assert.equal(game.worldOps.selected,shop);
+  const state=()=>JSON.stringify({gold:game.gold,clock:game.worldOps.clock,wave:game.wave,prepare:game.prepareTime,
+    queue:game.spawnQueue.length,enemies:game.enemies.map(e=>[e.x,e.y,e.health]),inventory:game.worldOps.inventory});
+  const frozen=state();for(let i=0;i<5;i++)a.frame(100);
+  assert.equal(state(),frozen,'a displayed shop must pause the battle, convoy clock and consumables');
+  assert.equal(game.paused,false,'closing the modal should resume the existing battle state');
+  const gold=game.gold,repairStock=game.worldOps.stock.repair;
+  a.press('购买 抢修箱 · 80G');
+  assert.equal(game.gold,gold);assert.equal(game.worldOps.stock.repair,repairStock);
+  assert.ok(a.texts.some(t=>t.text==='当前没有需要修复的目标，金币未消耗。'),'failed purchases must be visible inside the modal');
+  a.press('购买 路障包 · 60G');
+  assert.equal(game.gold,gold-60);assert.equal(game.worldOps.inventory.barrier,1);assert.equal(game.worldOps.stock.barrier,1);
+  assert.equal(game.modal,'worldShop');assert.ok(a.texts.some(t=>t.text.includes('路障包已入工具袋')));
+  a.press('关闭');assert.equal(game.modal,null);assert.equal(game.worldOps.selected,null);
+  a.press('路障包 ×1');assert.equal(game.item,'barrier');assert.equal(a.canvas.style.cursor,'pointer');
+  a.key('Escape');assert.equal(game.item,null);assert.equal(game.modal,null);assert.equal(game.worldOps.inventory.barrier,1);
+  a.press('路障包 ×1');
+  // 点击路边阵地不会误建塔，也不会消耗只能部署到开放道路的道具。
+  a.tapWorld(game.sites[0]);assert.equal(game.item,'barrier');assert.equal(game.worldOps.inventory.barrier,1);
+  assert.equal(game.towers.length,0);assert.equal(game.selectedSite,null);
+  const path=game.road.path(0),target={x:(path[0].x+path[1].x)/2,y:(path[0].y+path[1].y)/2};
+  a.move(a.MobileLayout.toScreen(game,target));assert.equal(a.canvas.style.cursor,'crosshair');a.tapWorld(target);
+  assert.equal(game.item,null);assert.equal(game.worldOps.inventory.barrier,0);assert.equal(game.worldOps.zones.length,1);
+  assert.ok(!game.buttons.some(b=>b.label?.startsWith('路障包 ×')));
+  assert.equal(game.gold,gold-60,'using a prepaid item does not charge a second time');
+  const lifetime=game.worldOps.zones[0].life;a.frame(100);assert.ok(game.worldOps.zones[0].life<lifetime);
+});
+
+test('world interaction controls stay within narrow, windowed and fullscreen layouts',async()=>{
+  for(const [width,height] of [[960,540],[480,270],[420,740]]){
+    const a=boot(width,height),{game,Platform}=a;start(a);
+    const bounds=()=>{for(const button of game.buttons)assert.ok(button.x>=-.01&&button.y>=-.01&&
+      button.x+button.w<=Platform.layout.width+.01&&button.y+button.h<=Platform.layout.height+.01,
+      `${width}x${height}: ${button.label||'panel'}`);};
+    const checkFacilities=()=>{
+      for(const point of game.worldOps.points){
+        a.tapWorld(point);assert.equal(game.modal,point.kind==='shop'?'worldShop':'worldPoint');bounds();
+        assert.ok(game.buttons.some(b=>b.label==='关闭'&&!b.disabled));
+        a.press('关闭');assert.equal(game.modal,null);bounds();
+      }
+    };
+    bounds();checkFacilities();
+    a.tapWorld(game.worldOps.points.find(p=>p.kind==='shop'));a.press('购买 路障包 · 60G');a.press('关闭');bounds();
+    const bag=game.buttons.find(b=>b.label==='路障包 ×1');assert.ok(bag&&bag.w>0&&bag.h>0);
+    a.press('全屏');await Promise.resolve();assert.equal(a.document.fullscreenElement,a.canvas);
+    a.resize(1920,1080);bounds();checkFacilities();
+    a.press('退出全屏');await Promise.resolve();assert.equal(a.document.fullscreenElement,null);
+    a.resize(width,height);bounds();a.press('路障包 ×1');a.key('Escape');assert.equal(game.worldOps.inventory.barrier,1);
+  }
+});
+
+test('world facilities do not intercept fixed-site clicks or tower placement at nearby edges',()=>{
+  const a=boot(960,540),{game}=a;start(a);
+  for(const site of game.sites)for(const [dx,dy] of [[0,0],[20,20],[-20,-20]]){
+    a.tapWorld({x:site.x+dx,y:site.y+dy});
+    assert.equal(game.modal,null,`site ${site.id} must not open an interaction`);
+    assert.equal(game.selectedSite,site,`site ${site.id} must remain selectable`);
+    assert.equal(game.buttons.filter(b=>b.towerType).length,4);
+    a.key('Escape');assert.equal(game.selectedSite,null);
+  }
+  const shop=game.worldOps.points.find(p=>p.kind==='shop');
+  const nearest=[...game.sites].sort((a,b)=>Math.hypot(a.x-shop.x,a.y-shop.y)-Math.hypot(b.x-shop.x,b.y-shop.y))[0];
+  a.tapWorld(nearest);a.press(b=>b.towerType==='rail');
+  assert.equal(game.towers.length,1);assert.equal(game.towers[0].siteId,nearest.id);
+  assert.equal(game.modal,null);a.key('Escape');
+  a.tapWorld(shop);assert.equal(game.modal,'worldShop');a.press('关闭');
+  a.tapWorld(game.towers[0]);assert.equal(game.selected,game.towers[0]);assert.equal(game.modal,null);
+});
+
+test('battle brief lists actual fixed sites and optional facilities; closed-road guard posts explain standby before purchase',()=>{
+  const a=boot(960,540),{game}=a;a.press('开始游戏');a.press('新建');game.progress.stars.fill(3);
+  a.press(b=>b.levelIndex===3);
+  assert.ok(a.texts.some(t=>t.text.startsWith(`${a.LEVELS[3].sites.length}处固定阵地`)&&t.text.includes('悬赏自选')));
+  a.press('开始战斗');let waitingSite=null;
+  for(const site of game.sites){
+    a.tapWorld(site);
+    if(a.texts.some(t=>t.text==='此处勤务站将待命，待道路开放后才能集结。')){waitingSite=site;break;}
+    a.key('Escape');
+  }
+  assert.ok(waitingSite,'the dynamic-road map should expose a future-road site with an explicit guard warning');
+  a.press(b=>b.towerType==='depot');const tower=game.selected;
+  assert.equal(tower.type,'depot');assert.equal(tower.rally,null);
+  assert.ok(a.texts.some(t=>t.text==='待命中 · 暂无可达道路，开放后自动集结'));
+  assert.ok(game.buttons.find(b=>b.label==='设置集合点').disabled);
+  assert.ok(!game.buttons.find(b=>b.label?.startsWith('强化')).disabled);
+  a.press(b=>b.label?.startsWith('强化'));assert.equal(tower.level,2);
+  assert.ok(a.texts.some(t=>t.text==='待命中 · 暂无可达道路，开放后自动集结'));
+});
+
+test('all battle previews draw a finite fixed-site marker at every declared coordinate',()=>{
+  const a=boot(960,540),{game,Renderer}=a;a.press('开始游戏');a.press('新建');game.progress.stars.fill(3);
+  const circle=Renderer.circle;let markers=[];
+  Renderer.circle=function(x,y,radius,color){
+    assert.ok([x,y,radius].every(Number.isFinite),'canvas circles must never receive undefined or NaN coordinates');
+    if(radius===8&&color==='#f7efd0')markers.push([x,y]);
+    return circle.call(this,x,y,radius,color);
+  };
+  try{
+    for(let index=0;index<a.LEVELS.length;index++){
+      markers=[];game.openLevel(index);a.draw();
+      const expected=JSON.parse(JSON.stringify(a.LEVELS[index].sites));
+      assert.equal(markers.length,expected.length,`${a.LEVELS[index].id}: every fixed site needs a preview marker`);
+      assert.deepEqual(markers,expected,`${a.LEVELS[index].id}: previews use the declared world coordinates`);
+    }
+  }finally{Renderer.circle=circle;}
+});
+
+test('all facility labels fit their own boxes, remain clickable and stay clear of scenery at multiple sizes',()=>{
+  const a=boot(960,540),{game,AtlasArt,WorldOps,MobileLayout}=a;
+  start(a);game.progress.stars.fill(3);
+  const landmark=AtlasArt.landmark;let decorations=[];
+  AtlasArt.landmark=function(theme,x,y,scale,variant){
+    decorations.push({x:x-50*scale,y:y-60*scale,w:100*scale,h:110*scale});
+    return landmark.call(this,theme,x,y,scale,variant);
+  };
+  try{
+    for(const [width,height,stages] of [[960,540,Array.from({length:48},(_,i)=>i)],[480,270,[1,23,47]],[1920,1080,[1,23,47]]]){
+      a.resize(width,height);
+      for(const stage of stages){
+        game.startLevel(stage);decorations=[];a.draw();
+        for(const point of game.worldOps.points){
+          const label=WorldOps.parts(point)[1],x=label.x+label.w/2,y=label.y+label.h/2;
+          const text=a.texts.find(t=>t.text===point.name&&t.x===x&&t.y===y);
+          assert.ok(text,`${game.level.id}: the facility name must be rendered in its allocated label`);
+          const font=Number(text.font.match(/([\d.]+)px/)[1]);
+          const textWidth=[...text.text].reduce((sum,c)=>sum+(/[\x00-\x7F]/.test(c)?.56:1)*font,0);
+          assert.ok(textWidth<=label.w-12+.01,'label text stays within its padded box');
+          for(const decoration of decorations){
+            const origin=MobileLayout.toWorld(game,decoration),area={...origin,w:decoration.w/game.mobileCamera.scale,h:decoration.h/game.mobileCamera.scale};
+            assert.equal(WorldOps.overlaps(area,WorldOps.bounds(point),12),false,`${game.level.id}: scenery cannot cover the model or label`);
+          }
+          a.tapWorld({x,y});assert.equal(game.worldOps.selected,point,'the visible label is also a valid click target');
+          a.press('关闭');
+        }
+      }
+    }
+  }finally{AtlasArt.landmark=landmark;}
 });

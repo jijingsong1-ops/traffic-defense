@@ -7,14 +7,15 @@ Object.assign(Renderer, {
     const spec=ENEMIES[type],kind=spec.visual||type,boss=spec.boss;
     const tiny=kind==="runner"||kind==="swarm";
     const w=boss?54:tiny?23:kind==="splitter"?37:32,h=boss?30:tiny?13:21;
-    const ink="#31454b",metal="#d0d6bd",glass="#284e63",paint=frozen?"#acd5df":spec.color;
+    const ink="#354f49",metal="#e0dcbf",glass="#315d60",paint=frozen?"#acd5cf":spec.color;
     ctx.save();ctx.translate(x,y);ctx.scale(CONFIG.enemyVisualScale,CONFIG.enemyVisualScale);
     if(shield){
       this.oval(0,0,w*.66,h*.87,"#b4ecf51f","#80bbd6");
       this.line([[-w*.48,-h*.65],[-w*.6,0],[-w*.48,h*.65]],"#d8f4eb",1.5);
     }
     ctx.rotate(angle);
-    this.oval(2,5,w*.54,h*.57,"#263d403d");
+    this.oval(3,5,w*.55,h*.57,"#263d401a");
+    this.oval(1,3,w*.49,h*.51,"#263d4025");
     if(spec.skin==="sea"){
       this.polygon([[-w/2,-h/2],[w/2-5,-h/2],[w/2+5,0],[w/2-5,h/2],[-w/2,h/2],[-w/2+3,0]],paint,ink);
       this.polygon([[-w/2+4,-h/2+3],[w/2-6,-h/2+3],[w/2,0],[w/2-6,h/2-3],[-w/2+4,h/2-3]],"#dcdcc2");
@@ -43,6 +44,8 @@ Object.assign(Renderer, {
         this.box(px-4,side*h/2-3,8,6,ink,null,2);this.line([[px-2,side*h/2],[px+2,side*h/2]],"#8b9a94",1);
       }
       this.box(-w/2,-h/2,w,h,paint,ink,4);
+      // 车壳顶光、侧面油墨阴影与同向反光保持统一光源，不放大车辆。
+      this.line([[-w/2+4,-h/2+1],[w/2-5,-h/2+1]],"#fff8d45c",1.4);
       this.box(-w/2+2,h/2-5,w-4,3,"#31454b33",null,1);
       this.line([[-w/2+4,-h/2+2],[w/2-5,-h/2+2]],"#fff4d6b8",1.3);
       this.box(w/2-10,-h/2+3,6,h-6,glass,metal,2);

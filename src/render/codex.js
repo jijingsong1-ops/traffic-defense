@@ -159,7 +159,7 @@ Object.assign(Renderer,{
     }
     for(const tower of game.towers){
       if(tower.jammedTime>0){this.attackRing(tower.x,tower.y,30,"#866092",3);this.text(`封锁 ${tower.jammedTime.toFixed(1)}s`,tower.x,tower.y-57,13,"#654175","bold","center");}
-      else if(tower.hasteTime>0||tower.jamGuardTime>0){this.attackRing(tower.x,tower.y,25,tower.hasteTime>0?"#ba8a33":"#508c6b",2);}
+      else if(tower.hasteTime>0||tower.relayHasteTime>0||tower.jamGuardTime>0){this.attackRing(tower.x,tower.y,25,tower.hasteTime>0||tower.relayHasteTime>0?"#ba8a33":"#508c6b",2);}
     }
     for(const enemy of game.enemies){
       if(enemy.spec.towerJam&&enemy.abilityTimer<=TACTIC_PARAMETERS.jamWarning&&enemy.silenceTime<=0){

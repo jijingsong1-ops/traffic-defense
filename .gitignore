@@ -28,3 +28,5 @@ tests/_traffic-web-preview.html
 tests/_codex-preview.html
 
 tests/_convoy-preview.html
+tests/_field-preview.html
+tests/_site-design.cjs

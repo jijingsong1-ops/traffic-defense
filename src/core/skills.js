@@ -18,7 +18,7 @@ const SkillActions={
       for(const tower of towers){tower.hasteTime=Math.max(tower.hasteTime||0,spec.duration);tower.hastePower=Math.max(tower.hastePower||0,spec.haste);}
     }else if(type==="fire"){
       // 道路预铺热障也有效；不能在地图外或建筑空地消耗技能。
-      if(!game.buildRoad.isRoad(p,spec.radius))return false;
+      if(!game.road.isRoad(p,spec.radius))return false;
       game.skillZones.push({type,...p,spec,life:spec.duration,tick:0});
     }else{
       if(!victims.length)return false;

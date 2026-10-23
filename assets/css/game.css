@@ -5,7 +5,10 @@ body {
   height: 100dvh;
   display: grid;
   place-items: center;
-  background: #dfe5df;
+  background-color: #e8e9df;
+  background-image: radial-gradient(ellipse at 50% 42%, #f7f5e9 0%, #e8e9df 56%, #d9dfd5 100%);
+  color: #29484b;
+  font-family: "Microsoft YaHei", system-ui, sans-serif;
 }
 canvas {
   display: block;
@@ -14,16 +17,22 @@ canvas {
   width: min(960px, calc(100vw - 48px), calc((100dvh - 48px) * 16 / 9));
   height: auto;
   aspect-ratio: 16 / 9;
-  border-radius: 12px;
-  box-shadow: 0 16px 48px #24372b30, 0 0 0 1px #9caa9c;
+  border-radius: 14px;
+  box-shadow: 0 24px 70px #284b3e23, 0 4px 14px #284b3e16, 0 0 0 1px #96a08c, 0 0 0 6px #f5f2e8;
   touch-action: none;
   outline: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
+canvas:focus-visible { outline: 3px solid #578478; outline-offset: 7px; }
 canvas:fullscreen {
   width: 100vw;
   height: 100vh;
   height: 100dvh;
   border-radius: 0;
   box-shadow: none;
-  background: #d9cba5;
+  background: #e1d9bb;
+}
+@media (max-width: 560px) {
+  canvas { border-radius: 8px; box-shadow: 0 12px 28px #284b3e23, 0 0 0 1px #96a08c; }
 }

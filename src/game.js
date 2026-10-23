@@ -82,16 +82,16 @@ class Game {
   setRally(p) {
     const t=this.rallyTower;
     if(!t||!this.towers.includes(t))return false;
-    const point=this.buildRoad.nearestPoint(p);
-    if(Collision.distance(p,point)>30||Collision.distance(t,point)>t.stats.rallyRange){this.notify("集合点必须在勤务站范围内的道路上。");return false;}
-    t.rally=point;t.soldiers.forEach(s=>s.release());this.rallyTower=null;this.selected=t;
+    const point=AlliedNavigation.resolveRally(this,t,p);
+    if(!point){this.notify("请选择勤务站范围内已开放、且队员能够到达的道路。");return false;}
+    t.rally=point;t.soldiers.forEach(s=>{s.release();s.walkRoute=null;});this.rallyTower=null;this.selected=t;
     Sound.play("build");this.notify("队员正在前往新的集合点。");return true;
   }
   toCanvas(e) {
     return Platform.toCanvas(e, canvas);
   }
   notify(message) { this.message = message; this.messageTime = 4; }
-  cancel() { this.rallyTower = null; this.selectedSite = null; this.skill = null; this.selected = null; this.inspected = null;if(this.traffic)this.traffic.routeMenu=false; }
+  cancel() { this.rallyTower = null; this.selectedSite = null; this.skill = null; this.item=null;this.selected = null; this.inspected = null;if(this.traffic)this.traffic.routeMenu=false; }
   startLevel(index) {
     if (!Number.isInteger(index) || index < 0 || index > this.unlocked || index >= LEVELS.length) return false;
     const deck = this.getDeck(index);
@@ -114,6 +114,7 @@ class Game {
     this.skillSpecs=Object.fromEntries(SKILL_ORDER.map(type=>[type,SkillBook.stats(this.progress.skills,type,this.level)]));
     this.skillCooldowns=Object.fromEntries(SKILL_ORDER.map(type=>[type,0]));this.skillZones=[];
     Traffic.init(this);
+    WorldOps.init(this);
     this.cancel(); this.accumulator = 0;
     this.notify(Platform.touch?"轻触路边预留空地建塔，轻触炮台升级；顶部按钮暂停部署。":"点击道路旁的预留空地，再选择建造塔型。悬停显示金色边线，空格可暂停部署。");
     if(this.level.routeEvent)this.notify(`第 ${this.level.routeEvent.wave} 波：${this.level.routeEvent.name}。虚线路段将启用，请预留火力。`);
@@ -169,6 +170,7 @@ class Game {
         enemy.path[i].x === path[i].x && enemy.path[i].y === path[i].y)){enemy.path = path;Lanes.sync(enemy);}
     }
     Traffic.onRouteEvent(this);
+    AlliedNavigation.reconcile(this,this.previousRoad);
     return true;
   }
   towerAt(p) { return this.towers.find(t => Collision.distance(t, p) <= CONFIG.towerRadius + 7); }
@@ -196,7 +198,7 @@ class Game {
     this.gold -= spec.cost;
     const tower = new Tower(type, site.x, site.y, this.level.theme);
     tower.siteId = site.id; this.towers.push(tower);
-    if(type==="depot"){tower.rally=this.buildRoad.nearestPoint(tower);tower.update(0,this);} Sound.play("build");
+    if(type==="depot"){tower.rally=AlliedNavigation.defaultRally(this,tower);tower.update(0,this);} Sound.play("build");
     this.cancel(); this.selected = tower;
     this.effect(site, spec.color, 28); this.notify(`${spec.name}部署完成。点击塔可强化或出售。`);
     return true;
@@ -209,7 +211,7 @@ class Game {
   }
   upgrade(branch = null) {
     const t = this.selected;
-    if (!t || !this.towers.includes(t) || this.screen !== "battle" || this.modal) return false;
+    if (!t || t.temporary || !this.towers.includes(t) || this.screen !== "battle" || this.modal) return false;
     if (t.level >= CONFIG.maxLevel || (t.level === 2 && ![0, 1].includes(branch)) || (t.level !== 2 && branch !== null)) return false;
     if(t.level===2&&!this.branchUnlocked(t.type,t.theme,branch)){this.notify(`累计通关 ${evolutionRequirement(t.type,t.theme,branch)} 关解锁此进化。`);return false;}
     const cost = t.level === 2 ? t.paths[branch].cost : t.upgradeCost;
@@ -220,7 +222,7 @@ class Game {
     return true;
   }
   sell() {
-    if (!this.selected || !this.towers.includes(this.selected) || this.screen !== "battle" || this.modal) return;
+    if (!this.selected || this.selected.temporary || !this.towers.includes(this.selected) || this.screen !== "battle" || this.modal) return;
     const tower = this.selected; tower.soldiers.forEach(s=>s.release()); Sound.play("build");
     this.gold += tower.sellValue; this.towers = this.towers.filter(t => t !== tower); this.selected = null;
     this.notify(`回收防御塔，返还 ${tower.sellValue} 金币。`);
@@ -236,9 +238,12 @@ class Game {
     if (button) { if (!button.disabled) button.action(); return; }
     if (this.modal || this.screen !== "battle" || !Collision.inside(p, MAP)) return;
     if(this.rallyTower){this.setRally(p);return;}
+    if(this.item){WorldOps.placeItem(this,p);return;}
     if (this.selectedSite && this.buildPopupRect && Collision.inside(p, this.buildPopupRect)) return;
     if (this.selected && this.towerPopupRect && Collision.inside(p, this.towerPopupRect)) return;
     if (this.skill) { this.cast(p); return; }
+    const interaction=WorldOps.at(this,p);
+    if(interaction){WorldOps.open(this,interaction);return;}
     if(this.traffic.fork){
       const node=this.traffic.fork.node;
       const nearbySite=this.siteAt(p);
@@ -246,7 +251,7 @@ class Game {
       if(!(nearbySite&&Collision.distance(nearbySite,p)<=18)&&Math.abs(p.x-node.x)<34&&p.y>=node.y-48&&p.y<=node.y+12){const open=!this.traffic.routeMenu;this.cancel();this.traffic.routeMenu=open;return;}
     }
     const tower = this.pickTower(p);
-    if (tower) { this.cancel(); this.selected = tower; return; }
+    if (tower) { this.cancel();if(tower.temporary){this.notify(`应急小队将在 ${Math.ceil(tower.duration)} 秒后撤离。`);return;} this.selected = tower; return; }
     const enemy = this.enemies.find(e => !e.dead && Collision.distance(e, p) < (e.spec.boss ? 26 : 18));
     if (enemy) { this.cancel(); this.inspected = enemy; return; }
     const site = this.siteAt(p);
@@ -286,6 +291,7 @@ class Game {
     this.messageTime = Math.max(0, this.messageTime - dt);
     for (const type of Object.keys(this.skillCooldowns)) this.skillCooldowns[type] = Math.max(0, this.skillCooldowns[type] - dt);
     SkillActions.update(this,dt);
+    WorldOps.update(this,dt);
     for (const list of [this.effects, this.floats, this.beams]) list.forEach(e => { e.life -= dt; });
     this.effects = this.effects.filter(e => e.life > 0); this.floats = this.floats.filter(e => e.life > 0); this.beams = this.beams.filter(e => e.life > 0);
     if (this.inspected?.dead) this.inspected = null;
@@ -307,7 +313,7 @@ class Game {
     if(this.screen!=="battle")return;
     if (this.state === "wave" && !this.spawnQueue.length && !this.enemies.length) {
       this.projectiles = [];
-      if (this.wave === this.level.waves && Traffic.complete(this)) { this.finish(true); return; }
+      if (this.wave === this.level.waves && Traffic.complete(this)&&WorldOps.complete(this)) { this.finish(true); return; }
     }
   }
   frame(time) {
