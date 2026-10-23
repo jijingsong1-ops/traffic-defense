@@ -1,0 +1,223 @@
+"use strict";
+
+// 沿用手机版来源的 16:9 战场坐标；当前道路与玩法仅在网页版继续演进。
+// 只在启动时变换地图坐标，窗口缩放交给布局镜头，不拉伸车辆和炮台。
+const sourceMap = {...MAP};
+CONFIG.height = 720;
+Object.assign(MAP, {x:24, y:96, w:1232, h:510});
+const mobilePoint = ([x,y]) => [
+  Math.round(MAP.x+(x-sourceMap.x)/sourceMap.w*MAP.w),
+  Math.round(MAP.y+(y-sourceMap.y)/sourceMap.h*MAP.h)
+];
+for (const level of LEVELS) {
+  level.routes = level.routes.map(route=>route.map(mobilePoint));
+  if(level.routeEvent) level.routeEvent.routes = level.routeEvent.routes.map(route=>route.map(mobilePoint));
+  level.sites = planConstructionSites(level);
+}
+
+Object.assign(Renderer, {
+  // 首页、选关与战场分别布局；不复用桌面端的常驻信息侧栏。
+  audioButtons(game,x,y) {
+    this.button(game,{x,y,w:138,h:56},`音乐 ${Sound.musicEnabled?"开":"关"}`,()=>Sound.toggle("music"),{size:21});
+    this.button(game,{x:x+150,y,w:138,h:56},`音效 ${Sound.enabled?"开":"关"}`,()=>Sound.toggle("effects"),{size:21});
+  },
+  levelModal(game) {
+    const index=game.menuLevel,level=LEVELS[index],chapter=CHAPTERS[level.chapter],locked=index>game.unlocked;
+    const entries=Encounters.entrances(level),entry=game.intelEntry??null,roster=Encounters.roster(level,entry);
+    this.sheet(game,`${stageLabel(index)} · ${level.name}`,()=>{game.modal=null;});
+    this.button(game,{x:105,y:176,w:120,h:40},"全关敌情",()=>{game.intelEntry=null;game.intelPage=0;},{active:entry===null,size:20});
+    entries.forEach((e,i)=>this.button(game,{x:237+i*145,y:176,w:135,h:40},`${String.fromCharCode(65+i)} · ${ENEMY_PROFILES[e.profile].name}`,()=>{game.intelEntry=i;game.intelPage=0;},{active:entry===i,size:17}));
+    this.text(`主队 ${roster.total} 辆 / ${roster.groups} 组`,1160,197,20,COLORS.gold,"bold","right");
+    const preview={x:105,y:234,w:510,h:240},reservedRoad=new RoadNetwork(level,true);
+    this.box(preview.x,preview.y,preview.w,preview.h,chapter.terrain,"#8caa91",12);
+    ctx.save();ctx.beginPath();ctx.roundRect(preview.x,preview.y,preview.w,preview.h,12);ctx.clip();
+    ctx.translate(preview.x,preview.y);ctx.scale(preview.w/MAP.w,preview.h/MAP.h);ctx.translate(-MAP.x,-MAP.y);
+    AtlasArt.scenery(MAP,chapter.theme,level.stage,p=>reservedRoad.isRoad(p,55));
+    if(level.routeEvent)for(const [a,b] of new RoadNetwork({routes:level.routeEvent.routes}).edges)this.line([[a.x,a.y],[b.x,b.y]],"#ffe8a9",6,[10,12]);
+    this.road(new RoadNetwork(level),true,chapter);
+    for(const route of level.routes)this.circle(...route.at(-1),17,"#daebae");
+    entries.forEach(e=>{this.circle(...e.point,24,entry===null||entry===e.id?"#b36945":"#aca38d");this.text(String.fromCharCode(65+e.id),e.point[0],e.point[1],28,"#fff4d3","bold","center");});
+    ctx.restore();
+    this.text(`${level.waves} 波 · ${level.gold}G · 四车道 · ${entries.length} 个出车口`,106,499,21,COLORS.gold,"bold");
+    this.text(entry===null?Traffic.mission(level).brief:`${entries[entry].name}：${ENEMY_PROFILES[entries[entry].profile].tip}`,106,529,18,COLORS.ink);
+    const counts={...roster.counts};if(roster.ambush)counts.raider=(counts.raider||0)+roster.ambush;
+    const keys=[...new Set([...Object.keys(counts),...Object.keys(roster.splits)])],pages=Math.ceil(keys.length/8);
+    game.intelPage=Math.min(game.intelPage||0,pages-1);
+    keys.slice(game.intelPage*8,game.intelPage*8+8).forEach((key,i)=>{
+      const x=640+i%2*270,y=234+Math.floor(i/2)*65,spec=ENEMIES[key];
+      this.box(x,y,258,57,"#e3d2aa",COLORS.border,6);this.vehicle(key,x+25,y+28);
+      this.text(spec.name,x+48,y+18,18,COLORS.ink,"bold");
+      const suffix=roster.splits[key]?` +${roster.splits[key]}分裂`:"";
+      this.text(`${counts[key]||0} 辆${key==='raider'&&roster.ambush?'（伏击）':suffix} · 甲${Math.round((spec.armor||0)*100)}% / 抗${Math.round((spec.magicResist||0)*100)}%`,x+48,y+42,14,COLORS.muted);
+    });
+    this.text(roster.ambush?"另有站点伏击8辆；分裂为增援上限":"分裂数量为全部击破的增援上限",642,510,15,COLORS.muted);
+    this.button(game,{x:982,y:496,w:55,h:34},"‹",()=>game.intelPage--,{disabled:game.intelPage===0,size:20});
+    this.text(`${game.intelPage+1}/${pages}`,1065,513,17,COLORS.muted,"normal","center");
+    this.button(game,{x:1100,y:496,w:65,h:34},"›",()=>game.intelPage++,{disabled:game.intelPage===pages-1,size:20});
+    this.text(level.routeEvent?`第${level.routeEvent.wave}波：${level.routeEvent.name}`:`${level.layout} · 首领${level.boss?'出战':'无'}`,106,557,16,COLORS.muted);
+    this.button(game,{x:105,y:583,w:144,h:48},"炮塔图鉴",()=>game.openCodex("towers","level"),{size:21});
+    this.button(game,{x:261,y:583,w:144,h:48},"怪物图鉴",()=>game.openCodex("enemies","level"),{size:21});
+    this.button(game,{x:417,y:583,w:144,h:48},"出战技能",()=>game.openCodex("skills","level"),{size:21});
+    this.text(game.progress.skills.loadout.map((key,i)=>`${i?"E":"Q"} ${SKILLS[key].name}`).join(" / "),106,652,16,COLORS.ink);
+    this.button(game,{x:670,y:563,w:495,h:68},locked?`通关 ${stageLabel(index-1)} 后解锁`:"开始战斗",()=>game.startLevel(index),{primary:!locked,disabled:locked,color:COLORS.gold,size:29});
+    this.text(`固定四塔出战 · 最好 ${"★".repeat(game.progress.stars[index])+"☆".repeat(3-game.progress.stars[index])}`,670,652,16,COLORS.muted);
+  },
+  sheet(game,title,close) {
+    this.box(70,72,1140,598,"#eddfb9","#957b53",22);
+    this.text(title,105,122,32,COLORS.ink,"bold");
+    this.button(game,{x:1090,y:96,w:84,h:60},"关闭",close,{size:23});
+    this.line([[104,162],[1174,162]],"#a79165",2);
+  },
+  cityScenery(game) {
+    const chapter=CHAPTERS[game.level.chapter];
+    this.routeLayers(game);this.road(game.road,false,chapter);
+    for(const route of game.road.routes){
+      const entry=route[0],end=route.at(-1);
+      this.circle(entry.x,entry.y,16,"#ac684c");this.text("»",entry.x,entry.y,24,"#fff3c8","bold","center");
+      this.circle(end.x,end.y,19,"#4d765f");this.flag(end.x,end.y,"#f5dd99");
+    }
+    for(const entry of Encounters.entrances(game.level)){
+      const [x,y]=entry.point,profile=ENEMY_PROFILES[entry.profile];
+      this.box(x-30,y-61,110,28,"#ead6ae",COLORS.border,5);
+      this.text(`${String.fromCharCode(65+entry.id)} · ${profile.name}`,x+25,y-47,12,COLORS.ink,"bold","center");
+    }
+  },
+  field(game) {
+    this.fieldWorld(game);
+    if(game.level.routeEvent){
+      const event=game.level.routeEvent;
+      this.box(330,104,620,31,"#e8d4a8ed",null,8);
+      this.text(Traffic.eventText(game),640,119,17,"#735638","bold","center");
+    }
+    // 暂停提示留在控制栏，避免遮住战场底部的固定阵地。
+    const boss=game.enemies.find(e=>!e.dead&&e.spec.boss);
+    if(boss){this.box(406,143,468,34,"#d2bb93ed",null,8);this.text(boss.spec.name,420,160,18,COLORS.red,"bold");this.box(565,155,293,10,"#6c564a",null,4);this.box(565,155,293*Math.max(0,boss.health/boss.maxHealth),10,COLORS.red,null,4);}
+  },
+  waveButton(game) {
+    const final=game.wave>=game.level.waves,ready=game.canStartWave();
+    const rect={x:872,y:623,w:384,h:85};
+    this.button(game,rect,"",()=>game.startWave(),{primary:ready,color:COLORS.gold,disabled:!ready});
+    const x=919,y=665,r=29,seconds=Math.max(0,Math.ceil(game.prepareTime));
+    this.circle(x,y,r+4,ready?"#6b634b":"#74694f");
+    ctx.beginPath();ctx.arc(x,y,r,-Math.PI/2,-Math.PI/2+Math.PI*2*(final?1:Math.max(0,Math.min(1,1-game.prepareTime/game.waveDuration))));
+    ctx.strokeStyle=COLORS.gold;ctx.lineWidth=5;ctx.stroke();
+    this.text(final?"✓":game.spawnQueue.length?"…":`${seconds}`,x,y,24,"#fff1cb","bold","center");
+    this.text(final?"最终波 · 完成交通任务":`${game.wave?"提前发动":"开始"}第 ${game.wave+1} 波`,1096,650,23,ready?"#193c3c":COLORS.ink,"bold","center");
+    const tip=final?`场上 ${game.enemies.length} · 待出发 ${game.spawnQueue.length}`:game.paused?"暂停中":ready?`提前 ${seconds} 秒 · 奖励 +${game.earlyWaveReward} G`:`本波待出场 ${game.spawnQueue.length} · 出完后计时`;
+    this.text(tip,1096,681,16,ready?"#365950":COLORS.muted,"normal","center");
+  },
+  modal(game) {
+    if(game.modal==="saveSlots"){
+      this.sheet(game,game.saveMode==="new"?"开始游戏 · 选择存档位":"读取存档 · 选择一段远征",()=>{game.modal=null;});
+      Progress.list().forEach((slot,i)=>{
+        const x=106,y=186+i*144,w=1068,h=127,empty=!slot,loading=game.saveMode==="load";
+        this.box(x,y,w,h,empty?"#e5d5af":"#dbc89d",COLORS.border,12);
+        this.text(`存档 ${i+1}`,x+22,y+31,25,COLORS.ink,"bold");
+        this.text(empty?"空存档位":Progress.dateLabel(slot.createdAt),x+165,y+31,24,COLORS.ink,"bold");
+        if(slot){
+          const completed=slot.stars.filter(Boolean).length,index=Progress.unlocked(slot);
+          this.text(`进度 ${completed} / 48 关 · ★ ${slot.stars.reduce((a,b)=>a+b,0)} / 144`,x+165,y+72,23,COLORS.gold,"bold");
+          this.text(completed===48?"六章远征已完成":`${CHAPTERS[LEVELS[index].chapter].name} · 待挑战 ${stageLabel(index)} ${LEVELS[index].name}`,x+165,y+103,19,COLORS.muted);
+        }else this.text(loading?"尚未建立战役":"从第一章开始，首次建立日期将自动记录",x+165,y+79,21,COLORS.muted);
+        this.button(game,{x:x+w-208,y:y+32,w:185,h:67},loading?"读取":empty?"新建":"重新开始",()=>game.chooseSaveSlot(i),{disabled:loading&&empty,primary:!empty||!loading,size:25});
+      });
+      this.text("最多三个独立存档 · 通关自动保存 · 日期为首次建立时间",640,643,19,COLORS.muted,"normal","center");
+      return;
+    }
+    if(game.modal==="level"){this.levelModal(game);return;}
+    if(game.modal==="loadout"||game.modal==="intel"){
+      const research=game.modal==="loadout",chapter=CHAPTERS[research?(game.libraryChapter??game.menuChapter):(game.intelChapter??game.menuChapter)];
+      this.sheet(game,research?`${chapter.name} · 进化研究`:`${chapter.name} · 敌情档案`,()=>{game.modal=game.screen==="menu"?"level":null;});
+      if(research)TOWER_ORDER.forEach((type,i)=>{
+        const x=106+i*265,spec=TOWERS[type];this.box(x,187,251,446,"#dbcca5",COLORS.border,12);
+        this.text(spec.name,x+125,215,25,spec.color,"bold","center");
+        pathsFor(type,chapter.theme).forEach((p,b)=>{
+          const y=277+b*170;ctx.save();ctx.translate(x+44,y+30);ctx.scale(.9,.9);this.tower({type,theme:chapter.theme,x:0,y:0,level:4,branch:b});ctx.restore();
+          this.text(p.name,x+86,y+12,21,spec.color,"bold");
+          const unlocked=game.branchUnlocked(type,chapter.theme,b);
+          if(!unlocked)AtlasArt.chain({x:x+8,y:y+34,w:235,h:56});
+          this.text(unlocked?"已解锁":`通关 ${evolutionRequirement(type,chapter.theme,b)} 关解锁`,x+125,y+108,18,COLORS.gold,"bold","center");
+          (p.note.match(/.{1,12}/g)||[]).slice(0,2).forEach((line,n)=>this.text(line,x+17,y+135+n*21,16,COLORS.muted));
+        });
+      });
+      else [...chapter.pool,chapter.boss].forEach((type,i)=>{
+        const x=106+(i%3)*359,y=191+Math.floor(i/3)*214,spec=ENEMIES[type];this.box(x,y,340,196,"#dfcea5",COLORS.border,12);
+        this.vehicle(type,x+48,y+49);this.text(spec.name,x+92,y+36,23,spec.color,"bold");this.text(`基础 HP ${Math.round(spec.hp*(spec.boss?CONFIG.bossHealthMultiplier:CONFIG.enemyHealthMultiplier))} · 速度 ${spec.speed}`,x+92,y+68,16,COLORS.muted);
+        (spec.note.match(/.{1,16}/g)||[]).slice(0,2).forEach((line,n)=>this.text(line,x+18,y+112+n*25,18,COLORS.ink));
+        this.text(spec.counter,x+18,y+172,16,COLORS.gold);
+      });return;
+    }
+    if(game.modal==="battleMenu"){
+      this.sheet(game,"战斗已暂停",()=>{game.modal=null;});
+      [ ["继续战斗",()=>{game.modal=null;}],["重新挑战",()=>{game.modal="restart";}],["返回章节地图",()=>{game.modal="leave";}],["作战图鉴",()=>game.openCodex("enemies","battleMenu")] ].forEach(([label,action],i)=>this.button(game,{x:390,y:187+i*87,w:500,h:73},label,action,{primary:i===0,size:28}));this.audioButtons(game,496,552);return;
+    }
+    const fresh=game.modal==="newCampaign",restart=game.modal==="restart";
+    this.box(268,190,744,340,"#eedfbb","#9a835a",22);
+    this.text(fresh?"开启新的战役？":restart?"重新挑战本关？":"返回章节地图？",640,250,32,COLORS.ink,"bold","center");
+    this.text(fresh?`只覆盖存档 ${game.pendingSlot+1}，其他存档保持不变。`:"本局部署不保留，已通关的成绩仍会保存。",640,320,23,COLORS.muted,"normal","center");
+    this.button(game,{x:312,y:398,w:302,h:82},"取消",()=>{game.modal=fresh?"saveSlots":null;},{size:28});
+    this.button(game,{x:642,y:398,w:326,h:82},fresh?"开始新战役":"确认",()=>{
+      if(fresh)game.newCampaign(true);else if(restart)game.startLevel(game.levelIndex);else{game.screen="menu";game.modal=null;game.cancel();}
+    },{primary:true,color:COLORS.gold,size:28});
+  },
+  result(game) {
+    this.box(298,133,684,454,"#eedfbb",game.won?COLORS.mint:COLORS.red,24);
+    this.text(game.won?"防线守住了！":"防线失守",640,211,42,game.won?COLORS.mint:COLORS.red,"bold","center");
+    this.text("★".repeat(game.earnedStars)+"☆".repeat(3-game.earnedStars),640,287,62,COLORS.gold,"bold","center");
+    this.text(game.saveFailed?"保存失败 · 请检查微信存储空间":game.won?"交通任务完成 · 战绩已保存":game.failureReason||"调整部署，再试一次",640,358,23,COLORS.muted,"normal","center");
+    this.button(game,{x:345,y:435,w:285,h:85},"重新挑战",()=>game.startLevel(game.levelIndex),{size:28});
+    this.button(game,{x:652,y:435,w:285,h:85},"章节地图",()=>{game.screen="menu";game.menuLevel=game.unlocked;game.menuChapter=LEVELS[game.menuLevel].chapter;},{primary:true,color:COLORS.gold,size:28});
+  },
+  touchPanel(game,title,height=352) {
+    const rect={x:380,y:156,w:520,h:height};
+    this.box(rect.x,rect.y,rect.w,rect.h,"#ecdcb4fa",COLORS.gold,14);
+    game.buttons.push({...rect,action:()=>{}});
+    this.text(title,rect.x+22,rect.y+35,24,COLORS.ink,"bold");
+    this.button(game,{x:rect.x+442,y:rect.y+10,w:62,h:52},"关闭",()=>game.cancel(),{size:18});
+    return rect;
+  },
+  buildPopup(game) {
+    game.buildPopupRect=null;
+    if(!game.selectedSite||game.screen!=="battle")return;
+    const rect=this.touchPanel(game,`地块 ${game.selectedSite.id+1} · 建造炮台`,290);
+    game.buildPopupRect=rect;
+    game.loadout.forEach((type,i)=>{
+      const spec=TOWERS[type],x=rect.x+16+i*125,y=rect.y+87,afford=game.gold>=spec.cost;
+      this.button(game,{x,y,w:113,h:140},"",()=>game.selectBuild(type),{disabled:!afford,towerType:type});
+      ctx.save();ctx.translate(x+56,y+54);ctx.scale(.9,.9);this.tower({type,theme:game.level.theme,x:0,y:0,level:1,branch:null});ctx.restore();
+      this.text(spec.name,x+56,y+93,19,spec.color,"bold","center");this.text(`${spec.cost} G`,x+56,y+120,18,afford?COLORS.gold:COLORS.muted,"bold","center");
+    });
+    this.text("轻触炮台卡片建造 · 金币不足时按钮变暗",rect.x+260,rect.y+260,17,COLORS.muted,"normal","center");
+  },
+  towerPopup(game) {
+    game.towerPopupRect=null;const t=game.selected;
+    if(!t||game.screen!=="battle"||game.rallyTower)return;
+    const rect=this.touchPanel(game,`${t.name} · L${t.level}`,392),x=rect.x,y=rect.y;
+    game.towerPopupRect=rect;
+    this.text(`${CombatRules.typeName(t.stats.damageType)} ${Math.round(t.stats.damage)} · ${(1/t.stats.cooldown).toFixed(2)}次/秒 · 射程 ${t.stats.range}`,x+22,y+87,19,COLORS.muted);
+    if(t.level===2){
+      t.paths.forEach((path,i)=>{
+        const bx=x+16+i*252,unlocked=game.branchUnlocked(t.type,t.theme,i),afford=game.gold>=path.cost;
+        this.button(game,{x:bx,y:y+116,w:236,h:167},"",()=>game.upgrade(i),{disabled:!unlocked||!afford,locked:!unlocked,branch:i});
+        this.text(path.name,bx+118,y+146,23,t.spec.color,"bold","center");
+        if(unlocked){
+          this.text(`${path.cost} G`,bx+118,y+180,21,COLORS.gold,"bold","center");
+          (path.note.match(/.{1,12}/g)||[]).slice(0,3).forEach((line,j)=>this.text(line,bx+118,y+216+j*23,16,COLORS.muted,"normal","center"));
+        }else{
+          AtlasArt.chain({x:bx+8,y:y+162,w:220,h:61});
+          this.text(`通关 ${evolutionRequirement(t.type,t.theme,i)} 关解锁`,bx+118,y+246,19,COLORS.ink,"bold","center");
+          this.text(`当前已通关 ${game.completed} 关`,bx+118,y+270,16,COLORS.muted,"normal","center");
+        }
+      });
+    }else{
+      const max=t.level===4;
+      this.button(game,{x:x+16,y:y+129,w:488,h:78},max?"已达最高等级":`强化 → L${t.level+1} · ${t.upgradeCost} G`,()=>game.upgrade(),{primary:!max,disabled:max||game.gold<t.upgradeCost,size:25});
+      const note=t.branch===null?"强化到二级后选择进化方向":t.paths[t.branch].note;
+      this.text(note,x+260,y+246,19,COLORS.gold,"normal","center");
+    }
+    this.button(game,{x:x+16,y:y+310,w:236,h:62},t.type==="depot"?"设置集合点":TARGET_MODES[t.targetMode],()=>{
+      if(t.type==="depot"){game.rallyTower=t;game.notify("轻触射程内道路，调动队员。");}else t.targetMode=(t.targetMode+1)%3;
+    },{size:20});
+    this.button(game,{x:x+268,y:y+310,w:236,h:62},`出售 +${t.sellValue} G`,()=>game.sell(),{color:COLORS.gold,size:20});
+  }
+});
